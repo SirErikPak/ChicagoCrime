@@ -38,6 +38,6 @@ def calculate_crime_zscores(data: pd.DataFrame, index_category: str='fbi_code_de
     if flag:
         z_pivot = aggregate.pivot(index=index_category, columns=column, values="z_score").fillna(0)
     else:
-        z_pivot = yearly.pivot(index="fbi_code_desc", columns="year", values="z_score").fillna(np.nan)
+        z_pivot = aggregate.pivot(index=index_category, columns=column, values="z_score").fillna(np.nan)
     
     return z_pivot
