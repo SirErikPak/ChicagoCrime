@@ -28,18 +28,32 @@ select c.case_number,
        p.district as p_district,
        p.sector as p_sector,
 	   p.beat_num as p_beat,
+	   ca.area_number as community_code,
+	   ca.community_name as community_name,
+	   ca.shape_area as ca_community_area,
 	   c.location
 	   -- a.arrest_date,
 	   -- a.race
 from   chicago.crimes c 
 left join chicago.neighborhoods n 
-on ST_Intersects(c.the_geom, n.the_geom)
+ on ST_Intersects(ST_FlipCoordinates(ST_SetSRID(c.location::geometry, 4326)), n.the_geom)
 left join chicago.zip_codes z
- on ST_Intersects(c.the_geom, z.the_geom)
+ on ST_Intersects(ST_FlipCoordinates(ST_SetSRID(c.location::geometry, 4326)), z.the_geom)
 left join chicago.staging_police_beats p
- on ST_Intersects(c.the_geom, p.the_geom)
+ on ST_Intersects(ST_FlipCoordinates(ST_SetSRID(c.location::geometry, 4326)), p.the_geom)
 left join chicago.iucr_codes as i
-on c.iucr = i.iucr
+ on c.iucr = i.iucr
+left join chicago.community_areas as ca
+ on ST_Intersects(ST_FlipCoordinates(ST_SetSRID(c.location::geometry, 4326)), ca.the_geom);
+ 
 -- left join chicago.arrests a
 -- on c.case_number = a.case_number;
 -- arrest table can have multiple arrest for the same case 
+
+-- copy out
+copy chicago.crimes_enriched TO '/Users/sir/Desktop/Project/ChicagoCrime/Data/chicago_crimes_export.csv' 
+WITH (FORMAT CSV, HEADER, DELIMITER ',');
+
+copy chicago.arrests TO '/Users/sir/Desktop/Project/ChicagoCrime/Data/chicago_arrests_export.csv' 
+WITH (FORMAT CSV, HEADER, DELIMITER ',');
+
