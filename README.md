@@ -14,7 +14,7 @@ Z-score analysis highlights specialized anomalies—places where a specific crim
 
 ![Z-Score Heatmap](Image/z-score_heatmape.png)
 
-## Interpreting the Heatmaps
+## Interpreting the Clustering Heatmaps
 
 ### 1. The Color Intensity (The Values)
 
