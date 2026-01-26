@@ -7,5 +7,5 @@ __pycache__/
 Data/
 .DS_Store
 Untitled*.*/
-*copy*.*/
+Backup/
 .ipynb_checkpoints
