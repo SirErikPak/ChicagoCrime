@@ -21,7 +21,7 @@ def calculate_crime_zscores(data: pd.DataFrame, index_category: str='fbi_code_de
         data.groupby([column, index_category], observed=False)
         .size()
         .reset_index(name='count')
-    )
+    ).sort_values(column)
 
     # Group for vectorized calculations
     group = aggregate.groupby(index_category, observed=False)['count']
