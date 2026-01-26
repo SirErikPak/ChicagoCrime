@@ -81,6 +81,8 @@ def bar_plot(data: pd.DataFrame,
 
     # Final layout adjustment
     plt.subplots_adjust(hspace=0.6, top=0.9) # Manual control often beats tight_layout in FacetGrids
+    # Save the figure to a file
+    plt.savefig(f"../Image/district_bar.png", dpi=600)
     plt.show()
 
 
@@ -153,6 +155,8 @@ def line_plot(data: pd.DataFrame, column_name: str, category_name: str, numeric_
     # Tight layout handles spacing, but we add hspace for the extra x-labels
     plt.subplots_adjust(hspace=0.7)
     g.tight_layout()
+    # Save the figure to a file
+    plt.savefig(f"../Image/{category_name}_line.png", dpi=600) 
     plt.show()
 
 
