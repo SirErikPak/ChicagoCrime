@@ -8,3 +8,4 @@ Data/
 .DS_Store
 Untitled*.*/
 *copy*.*/
+.ipynb_checkpoints
