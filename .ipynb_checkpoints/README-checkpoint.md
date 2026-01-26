@@ -9,4 +9,4 @@ We designate the primary Crime dataset as the authoritative source of truth. To 
 
 
 
-<img src="/Image/z-score_heatmape.png" width="600" height="auto" />
+<img src="/Image/z-score_heatmape.png" width="1800" height="auto" />
