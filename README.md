@@ -16,14 +16,14 @@ We designate the primary Crime dataset as the authoritative source of truth. To 
 - A Z-score of -1:
     - The value is lower than about 84% of all values
     - It’s a mild decrease, not extreme
-    
+
 <img src="/Image/z-score_heatmape.png" width="2800" height="auto" />
 
 <img src="/Image/cluster_Heatmap_rotate_analysis.png" width="2800" height="auto" />
 
 **Note:**
 1. The Color Intensity (The Values)
-* Since you are using Z-scores, look at the color first:
+* Since we are using Z-scores, look at the color first:
   - Deep Red: The crime count for that specific year was significantly above its historical average.
     - Deep Blue: The crime count for that specific year was significantly below its historical average.
     - White/Light Colors: The crime count was "normal" or very close to the 25-year mean.
