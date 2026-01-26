@@ -4,8 +4,8 @@ The data from the [Chicago Data Portal](https://data.cityofchicago.org/browse?ca
 
 We designate the primary Crime dataset as the authoritative source of truth. To ensure consistency and address missing values, we perform internal imputation using data from other sources to fill corresponding NaN entries in location-based fields.
 
-![Data Wrangling Notebook](Notebook/ChicagoCrimeWrangle.ipynb)
-![Data Visulize Notebook](Notebook/ChicagoCrimeVisualize.ipynb)
+* ![Data Wrangling Notebook](Notebook/ChicagoCrimeWrangle.ipynb)
+* ![Data Visulize Notebook](Notebook/ChicagoCrimeVisualize.ipynb)
 
 ## Understanding Z-Scores and Crime Anomalies
 
