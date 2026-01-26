@@ -1,6 +1,87 @@
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
+
+
+def bar_plot(data: pd.DataFrame, 
+             count: str, 
+             index: str, 
+             crime_code: str, 
+             column: str,
+             col_wrap: int=3) -> None:
+    """
+    Creates a faceted horizontal bar plot showing crime distributions across different categories.
+
+    This function uses Seaborn's catplot to generate a grid of bar charts. Each subplot 
+    represents a unique value from the 'column' parameter (e.g., a specific District), 
+    displaying the frequency of incidents for various crime codes.
+
+    Args:
+        data (pd.DataFrame): The source dataframe containing crime statistics.
+        count (str): The column name representing the numerical frequency of incidents 
+            (plotted on the x-axis).
+        index (str): The column name used for indexing (not explicitly used in the 
+            Seaborn call, but often required for pre-aggregated dataframes.
+        crime_code (str): The column name representing the categorical crime 
+            classification (plotted on the y-axis and used for color encoding).
+        column (str): The column name used to create the faceted grid (e.g., 'District').
+
+    Returns:
+        None: The function displays the plot using plt.show().
+
+    Note:
+        The function assumes 'matplotlib.ticker' is imported as 'mtick' and 
+        'seaborn' as 'sns'. It automatically applies 'viridis' styling, 
+        adds comma-formatted value labels to the bars, and wraps the grid 
+        at the specified number of columns.
+    """
+    # Use a context manager for temporary styling
+    # This prevents your function from permanently changing global plot settings
+    with sns.axes_style("whitegrid"):
+        g = sns.catplot(
+            data=data, 
+            kind="bar",
+            x=count, 
+            y=crime_code, 
+            hue=crime_code,
+            col=column, 
+            col_wrap=col_wrap,
+            height=4, 
+            aspect=1.5,
+            palette="viridis",
+            sharex=False,
+            legend=False
+        )
+
+    # Index or Non-Indexed
+    if index == 'I':
+        head = 'Indexed'
+    else:
+        head = 'Non-Indexed'
+
+    # Overall tile
+    g.fig.suptitle(f"FBI {head} Crime Distribution by District (2001-2025)", 
+                   fontsize=22, fontweight="bold")
+    # Each plot title
+    g.set_titles("{col_name} District", size=16, fontweight="bold", pad=20) 
+    
+    # Iterate through each subplot (ax) to add labels and formatting
+    for ax in g.axes.flatten(): 
+        ax.set_xlabel("Number of Incidents", fontsize=12)
+        ax.set_ylabel("FBI Crime Code", fontsize=12)
+        ax.tick_params(labelbottom=True)
+        
+        # Add actual counts at the end of bars with comma formatting
+        for container in ax.containers:
+            ax.bar_label(container, fmt='{:,.0f}', padding=4, fontsize=9)
+        
+        # Format the X-axis ticks with commas as well
+        ax.xaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+
+    # Final layout adjustment
+    plt.subplots_adjust(hspace=0.6, top=0.9) # Manual control often beats tight_layout in FacetGrids
+    plt.show()
 
 
 def line_plot(data: pd.DataFrame, column_name: str, category_name: str, numeric_name: str, col_wrap=4, rotation: int=45, ha='right') -> None:
