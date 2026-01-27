@@ -1,11 +1,13 @@
+from matplotlib.pyplot import flag
 import pandas as pd
 import numpy as np
 
 
-def calculate_crime_zscores(data: pd.DataFrame, index_category: str='fbi_code_desc',
-                            column: str='year', flag=True) -> pd.DataFrame:
+def zscore_anomaly(data: pd.DataFrame=None, index_category: str = None,
+                            column: str = None, flag=True) -> pd.DataFrame:
     """
-    Calculates Z-scores for crime types to normalize frequency across categories.
+    Calculates Z-scores for crime types acrose year 
+    to normalize frequency across each categories.
     
     Args:
         data (pd.DataFrame): Raw crime data.
@@ -16,6 +18,9 @@ def calculate_crime_zscores(data: pd.DataFrame, index_category: str='fbi_code_de
     Returns:
         pd.DataFrame: A pivoted DataFrame with categories as index and time as columns.
     """
+    # Direct ternary (more pythonic)
+    fill_value = 0 if flag else np.nan
+
     # Aggregate counts by year and category
     aggregate = (
         data.groupby([column, index_category], observed=False)
@@ -35,9 +40,6 @@ def calculate_crime_zscores(data: pd.DataFrame, index_category: str='fbi_code_de
     aggregate['z_score'] = aggregate['z_score'].replace([np.inf, -np.inf], 0).fillna(0)
 
     # Pivot for analysis
-    if flag:
-        z_pivot = aggregate.pivot(index=index_category, columns=column, values="z_score").fillna(0)
-    else:
-        z_pivot = aggregate.pivot(index=index_category, columns=column, values="z_score").fillna(np.nan)
+    z_pivot = aggregate.pivot(index=index_category, columns=column, values="z_score").fillna(fill_value)
     
     return z_pivot
