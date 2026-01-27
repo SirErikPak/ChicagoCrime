@@ -63,7 +63,7 @@ def choose_clusters_from_inconsistency(Z, depth=2):
 
 
 
-def choose_n_clusters_from_linkage(Z):
+def choose_clusters_from_linkage(Z):
     """
     Automatically estimate the number of clusters from a hierarchical
     clustering linkage matrix by detecting the largest jump in merge heights.
