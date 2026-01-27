@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
@@ -226,4 +227,23 @@ def stacked_bar_plot(data, title='', figsize=(12, 8), cmap='Set2', sort_index=Tr
     plt.legend(title=title, bbox_to_anchor=(1.02, 1), loc='upper left', frameon=False)
     plt.xlim(0, 100)
     plt.tight_layout()
+    plt.show()
+
+
+def plot_cuts(heights: np.array, incons: np.array) -> None:
+    # Sort by height (optional but makes the plot cleaner)
+    order = np.argsort(heights)
+    h_sorted = heights[order]
+    i_sorted = incons[order]
+    
+    # Plot
+    plt.figure(figsize=(10, 5))
+    plt.plot(h_sorted, i_sorted, marker='o', linestyle='-', color='steelblue')
+    
+    plt.axhline(1.0, color='red', linestyle='--', label='Inconsistency = 1.0')
+    plt.xlabel("Merge Height")
+    plt.ylabel("Inconsistency Coefficient")
+    plt.title("Inconsistency Profile Across Merge Heights")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
     plt.show()
