@@ -59,10 +59,11 @@ def choose_clusters_from_inconsistency(Z, depth=2):
     # Number of clusters = merges remaining after that jump
     n_clusters = Z.shape[0] - jump_idx
 
-    print("Recommended number of clusters:", n_clusters)
-    print("Jump occurred at merge index:", jump_idx)
+    print("----- Using Inconsistency coefficient Matrix ------")
+    print(f"Recommended number of clusters: {n_clusters}")
+    print(f"Jump occurred at merge index {jump_idx}\n")
 
-    return n_clusters, jump_idx, inc, diffs
+    return n_clusters
 
 
 
@@ -114,7 +115,8 @@ def choose_clusters_from_linkage(Z):
     # Number of clusters = number of merges remaining after that jump
     n_clusters = Z.shape[0] - jump_idx
 
-    print("Recommended clusters:", n_clusters)
-    print("Jump at merge index:", jump_idx)
+    print("----- Using Linkage Matrix -----")
+    print(f"Recommended clusters: {n_clusters}")
+    print(f"Jump at merge index: {jump_idx}\n")
 
-    return n_clusters, jump_idx, diffs
+    return n_clusters
