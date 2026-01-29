@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.cluster.hierarchy import inconsistent
 
-def choose_clusters_from_inconsistency(Z, depth=2):
+def choose_clusters_from_inconsistency(Z, method, metric, depth=2):
     """
     Estimate the number of clusters in a hierarchical clustering using
     inconsistency coefficients.
@@ -20,6 +20,12 @@ def choose_clusters_from_inconsistency(Z, depth=2):
     depth : int, default=2
         The maximum depth to compute inconsistency statistics, passed directly
         to `scipy.cluster.hierarchy.inconsistent`.
+        depth = 0 or 1: The algorithm only considers the current node’s link height.
+                        The inconsistency will always be 0 because there are no other 
+                         heights to compare it to.
+        depth = 2: The algorithm looks at the current node and its two immediate children 
+                   (if they aren't leaves).
+        depth = 3: The algorithm looks at the current node, its children, and its grandchildren.
 
     Returns
     -------
@@ -60,14 +66,15 @@ def choose_clusters_from_inconsistency(Z, depth=2):
     n_clusters = Z.shape[0] - jump_idx
 
     print("----- Using Inconsistency coefficient Matrix ------")
-    print(f"Recommended number of clusters: {n_clusters}")
+    print(f"Method: {method}, Metric: {metric}, Depth: {depth}")
+    print(f"Estimated number of clusters: {n_clusters}")
     print(f"Jump occurred at merge index {jump_idx}\n")
 
     return n_clusters
 
 
 
-def choose_clusters_from_linkage(Z):
+def choose_clusters_from_linkage(Z, method, metric):
     """
     Automatically estimate the number of clusters from a hierarchical
     clustering linkage matrix by detecting the largest jump in merge heights.
@@ -116,7 +123,7 @@ def choose_clusters_from_linkage(Z):
     n_clusters = Z.shape[0] - jump_idx
 
     print("----- Using Linkage Matrix -----")
-    print(f"Recommended clusters: {n_clusters}")
+    print(f"Method: {method}, Metric: {metric}")
+    print(f"Estimated number of clusters: {n_clusters}")
     print(f"Jump at merge index: {jump_idx}\n")
-
     return n_clusters
