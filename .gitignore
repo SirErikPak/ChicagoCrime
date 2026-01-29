@@ -10,7 +10,7 @@ Backup/
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
-Untitled*/Notebook
+Notebook/Untitled*
 
 # Optional: ignore all generated plots/images
 *.png
