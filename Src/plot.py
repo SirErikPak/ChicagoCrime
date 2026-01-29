@@ -3,6 +3,120 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
+import scipy.cluster.hierarchy as hierarchy
+from scipy.spatial.distance import pdist, squareform
+from matplotlib.colors import LinearSegmentedColormap
+# Python file imports
+import hierarchy_clustering
+
+
+def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
+    """
+    Plot a heatmap of pairwise correlation distances between rows of a DataFrame.
+
+    This function computes the correlation distance (1 - Pearson r) between all
+    pairs of rows in the input DataFrame, converts the condensed distance vector
+    into a full square distance matrix, and visualizes it as a heatmap. The
+    diagonal is masked because self-distances are always zero and not meaningful
+    for interpretation. A custom green→yellow→red colormap is used to highlight
+    low, medium, and high distances on a fixed scale from 0 to 2.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        A DataFrame where each row represents an observation (e.g., a crime type)
+        and each column represents a feature or time point (e.g., yearly Z-scores).
+        Correlation distances are computed between rows.
+    
+    figsize : tuple, optional
+        Size of the resulting heatmap figure in inches. Default is (10, 8).
+
+    Notes
+    -----
+    - Correlation distance is defined as:  d = 1 - corr(x, y)
+      Values range from:
+        0 → perfectly correlated (same shape)
+        1 → uncorrelated
+        2 → perfectly anti-correlated (opposite shape)
+    - The diagonal is masked because each row has distance 0 to itself.
+    - The heatmap uses a fixed color scale (0 to 2) for comparability across runs.
+
+    Returns
+    -------
+    None
+        Displays the heatmap using matplotlib.
+    """
+    
+    # Compute condensed distance matrix (correlation distance)
+    dist_condensed = pdist(data, metric='correlation')
+    
+    # Full distance matrix
+    dist_matrix = squareform(dist_condensed)
+    
+    # Custom colormap: green -> yellow -> red
+    colors = [(0, 1, 0), (1, 1, 0), (1, 0, 0)]  # RGB: green -> yellow -> red
+    cmap = LinearSegmentedColormap.from_list('pos_neutral_neg', colors, N=256)
+
+    # diagonal boolean mask - meaningful distances off the diagonal
+    mask = np.eye(dist_matrix.shape[0], dtype=bool)
+    
+    plt.figure(figsize=figsize)
+    ax = sns.heatmap(
+        dist_matrix,
+        mask=mask,
+        xticklabels=data.index,
+        yticklabels=data.index,
+        cmap=cmap,
+        annot=True,
+        fmt=".2f",
+        cbar_kws={'label': 'Correlation Distance (1 - r)'},
+        vmin=0, vmax=2  # fixed scale for all matrices
+    )
+    
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
+    plt.title('Pairwise Correlation Distance', fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_clustering(
+    data: pd.DataFrame, 
+    method: str, 
+    metric: str, 
+    figsize: tuple=(8,4), 
+    rotation: int=45
+) -> None:
+    """
+    Perform hierarchical clustering and plot a dendrogram.
+
+    Parameters:
+    - data: pd.DataFrame, rows as observations, columns as features
+    - method: str, linkage method ('single', 'complete', 'average', 'ward', etc.)
+    - metric: str, distance metric ('euclidean', 'correlation', etc.)
+    - figsize: tuple, figure size
+    - rotation: int, rotation angle for leaf labels
+    - return_linkage: bool, if True, return the linkage matrix
+
+    Returns:
+    - Z: linkage matrix (only if return_linkage=True)
+    """
+    # call helper linkage matrix function
+    Z = hierarchy_clustering.linkage_matrix(data, method, metric)
+    
+    # Plot dendrogram
+    plt.figure(figsize=figsize)
+    hierarchy.dendrogram(Z, labels=data.index.tolist(), leaf_rotation=rotation)
+    
+    # Fix label alignment
+    for lbl in plt.gca().get_xticklabels(): 
+        lbl.set_ha('right')
+    
+    plt.title(f'Hierarchical Clustering (Linkage: {method.capitalize()})')
+    plt.ylabel('Distance')
+    plt.tight_layout()
+    plt.show()
+
 
 
 def bar_plot(data: pd.DataFrame, 

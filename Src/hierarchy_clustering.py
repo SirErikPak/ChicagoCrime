@@ -1,5 +1,23 @@
+import pandas as pd
 import numpy as np
-from scipy.cluster.hierarchy import inconsistent
+import scipy.cluster.hierarchy as hierarchy
+
+
+def linkage_matrix(data: pd.DataFrame, method: str, metric: str):
+    """
+    Compute the linkage matrix for hierarchical clustering.
+
+    Parameters:
+    - data: pd.DataFrame, rows as observations, columns as features
+    - method: str, linkage method ('single', 'complete', 'average', 'ward', etc.)
+    - metric: str, distance metric ('euclidean', 'correlation', etc.)
+
+    Returns:
+    - Z: linkage matrix
+    """
+    Z = hierarchy.linkage(data.values, method=method, metric=metric, optimal_ordering=True)
+    return Z
+
 
 def choose_clusters_from_inconsistency(Z, method, metric, depth=2):
     """
@@ -50,7 +68,7 @@ def choose_clusters_from_inconsistency(Z, method, metric, depth=2):
     - This heuristic works best when the data exhibits a well-separated,
       hierarchical structure.
     """
-    I = inconsistent(Z, depth)
+    I = hierarchy.inconsistent(Z, depth)
     inc = I[:, -1]  # inconsistency coefficients
 
     # Compute differences between consecutive inconsistency values
@@ -67,10 +85,10 @@ def choose_clusters_from_inconsistency(Z, method, metric, depth=2):
 
     print("----- Using Inconsistency coefficient Matrix ------")
     print(f"Method: {method}, Metric: {metric}, Depth: {depth}")
-    print(f"Estimated number of clusters: {n_clusters}")
+    print(f"Estimated number of clusters:  {n_clusters}")
     print(f"Jump occurred at merge index {jump_idx}\n")
 
-    return n_clusters
+    return n_clusters, I
 
 
 
