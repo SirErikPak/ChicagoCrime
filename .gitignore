@@ -1,11 +1,28 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
-*.py[codz]
+*.py[cod]
 *$py.class
 
-# ignore other files that may be created by Python
+# Data and OS files
 Data/
-.DS_Store
-Untitled*/
 Backup/
+.DS_Store
+
+# Jupyter Notebooks
 .ipynb_checkpoints/
+Untitled*/Notebook
+
+# Optional: ignore all generated plots/images
+*.png
+*.pdf
+
+# Environments and Secrets
+.venv/
+venv/
+env/
+.env
+
+# Build and Distribution
+dist/
+build/
+*.egg-info/
