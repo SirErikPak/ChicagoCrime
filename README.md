@@ -51,3 +51,7 @@ The branches on the top (or side) tell you how similar items are:
 By rotating the plot, you can now scan horizontally to see which crimes behave similarly in the same year, and scan vertically to see how a single crime's "fortune" has changed from 2001 to 2025.
 
 ![Cluster Heatmap Analysis](Image/cluster_Heatmap_analysis.png)
+
+## Cluster Indexed Crime Analysis
+
+* [Notebook](Notebook/ChicagoCrimeExploratoryAnalysis.ipynb)
