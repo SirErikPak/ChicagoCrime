@@ -52,33 +52,30 @@ By rotating the plot, you can now scan horizontally to see which crimes behave s
 
 ![Cluster Heatmap Analysis](Image/cluster_Heatmap_analysis.png)
 
-## Cluster Indexed Crime Analysis
+## Cluster Indexed Crime Analysis [Notebook](Notebook/ChicagoCrimeExploratoryAnalysis.ipynb)
+### Summary (Indexed Crimes)
+#### Correlation Distance + Complete Linkage on Z‑Scored Crime Time Series
+This analysis examines how indexed crime categories in the dataset move over time by applying hierarchical clustering to **Z‑scored time series** using **correlation distance** and **complete linkage**. This configuration isolates **patterns of co‑movement**, allowing us to identify crime types that rise and fall together relative to their own historical baselines.
 
-Summary (Indexed Crimes) 
-Correlation Distance + Complete Linkage on Z‑Scored Crime Time Series
-This analysis examines how indexed crime categories in the dataset move over time by applying hierarchical clustering to Z‑scored time series using correlation distance and complete linkage. This configuration isolates patterns of co‑movement, allowing us to identify crime types that rise and fall together relative to their own historical baselines.
+#### Key Insight
+The resulting clusters do **not** reflect crime volume or severity. Instead, they reveal **synchronized temporal behavior**, crime types that tend to spike, dip, or shift together. These shared patterns often point to common underlying drivers such as environmental conditions, social dynamics, or policy changes.
 
-Key Insight
-The resulting clusters do not reflect crime volume or severity. Instead, they reveal synchronized temporal behavior, crime types that tend to spike, dip, or shift together. These shared patterns often point to common underlying drivers such as environmental conditions, social dynamics, or policy changes.
-
-Cluster Findings
-Cluster 1: Lethal Violence
-Homicide – 1st or 2nd Degree
-Involuntary Manslaughter / Reckless Homicide
-These offenses show tightly aligned anomaly patterns. When one deviates from its norm, the other typically does as well. This suggests shared situational or behavioral dynamics influencing lethal outcomes.
-Cluster 2: Interpersonal Violence + Motor Vehicle Theft
-Aggravated Assault
-Criminal Sexual Assault
-Motor Vehicle Theft
-Despite spanning both violent and property crime, these categories exhibit remarkably similar temporal rhythms. Their co‑movement suggests that broader social or environmental factors may be influencing both interpersonal violence and vehicle theft.
-Cluster 3: Property Crime + Related Offenses
-Aggravated Battery
-Arson
-Burglary
-Larceny – Theft
-Robbery
-This larger cluster reflects a group of offenses that share long‑term trends and seasonal patterns. Their synchronized behavior suggests they respond similarly to opportunity structures, economic conditions, or shifts in routine activity patterns.
-Conclusion
-Using Z‑scores with correlation distance and complete linkage reveals meaningful structure in the temporal behavior of crime categories. The clusters represent coherent groups of crimes that move together over time, offering valuable insight for forecasting, operational planning, and strategic decision‑making.
-
-* [Notebook](Notebook/ChicagoCrimeExploratoryAnalysis.ipynb)
+#### Cluster Findings
+##### Cluster 1: Lethal Violence
+* Homicide – 1st or 2nd Degree
+* Involuntary Manslaughter / Reckless Homicide
+    * These offenses show tightly aligned anomaly patterns. When one deviates from its norm, the other typically does as well. This suggests shared situational or behavioral dynamics influencing lethal outcomes.
+##### Cluster 2: Interpersonal Violence + Motor Vehicle Theft
+* Aggravated Assault
+* Criminal Sexual Assault
+* Motor Vehicle Theft
+    * Despite spanning both violent and property crime, these categories exhibit remarkably similar temporal rhythms. Their co‑movement suggests that broader social or environmental factors may be influencing both interpersonal violence and vehicle theft.
+##### Cluster 3: Property Crime + Related Offenses
+* Aggravated Battery
+* Arson
+* Burglary
+* Larceny – Theft
+* Robbery
+    * This larger cluster reflects a group of offenses that share long‑term trends and seasonal patterns. Their synchronized behavior suggests they respond similarly to opportunity structures, economic conditions, or shifts in routine activity patterns.
+##### Conclusion
+Using Z‑scores with correlation distance and complete linkage reveals meaningful structure in the temporal behavior of crime categories. The clusters represent **coherent groups of crimes that move together over time**, offering valuable insight for forecasting, operational planning, and strategic decision‑making.
