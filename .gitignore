@@ -6,6 +6,6 @@ __pycache__/
 # ignore other files that may be created by Python
 Data/
 .DS_Store
-Untitled*.*/
+Untitled*/
 Backup/
 .ipynb_checkpoints/
