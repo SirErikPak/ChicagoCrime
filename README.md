@@ -32,7 +32,7 @@ Since we are using Z-scores, look at the color first:
 The branches on the top (or side) tell you how similar items are:
 
 * **Close Neighbors**: If two crime types are connected by a short "U-shaped" branch, they have very similar patterns over the 25-year period
-* ***Branch Length**: The longer the vertical lines of the branch before they join, the less similar those two groups are
+* **Branch Length**: The longer the vertical lines of the branch before they join, the less similar those two groups are
 
 ### 3. Reading the "Clusters" (The Groups)
 
