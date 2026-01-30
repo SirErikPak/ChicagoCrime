@@ -31,7 +31,9 @@ select c.case_number,
 	   ca.area_number as community_code,
 	   ca.community_name as community_name,
 	   ca.shape_area as ca_community_area,
-	   c.location
+	   c.location,
+	   x_coordinate,
+	   y_coordinate
 	   -- a.arrest_date,
 	   -- a.race
 from   chicago.crimes c 

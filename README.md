@@ -7,6 +7,10 @@ We designate the primary Crime dataset as the authoritative source of truth. To 
 * [Data Wrangling Notebook](Notebook/ChicagoCrimeWrangle.ipynb)
 * [Data Visualize Notebook](Notebook/ChicagoCrimeVisualize.ipynb)
 
+## Chicago Crime Plot (2001 - 2025)
+
+![Crime Plot](Image/Scatter_analysis.png)
+
 ## Understanding Z-Scores and Crime Anomalies
 
 Z-score analysis highlights specialized anomalies—places where a specific crime type is occurring at a rate far beyond what is statistically normal for the rest of the city.
