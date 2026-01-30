@@ -70,6 +70,8 @@ The resulting clusters do **not** reflect crime volume or severity. Instead, the
 
 #### Cluster Findings
 
+![Cluster Plot](Image/cluster_index_analysis.png)
+
 ##### Cluster 1: Lethal Violence
 
 * Homicide – 1st or 2nd Degree
