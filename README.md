@@ -9,7 +9,7 @@ We designate the primary Crime dataset as the authoritative source of truth. To 
 
 ## Chicago Crime Plot (2001 - 2025)
 
-![Crime Plot](Image/Image/scatter_crime_plot.png)
+![Crime Plot](Image/scatter_crime_plot.png)
 
 ## Understanding Z-Scores and Crime Anomalies
 
