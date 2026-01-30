@@ -15,6 +15,7 @@ Notebook/Untitled*
 # Optional: ignore all generated plots/images
 *.png
 !Image/scatter_crime_plot.png
+!Image/cluster_index_analysis.png
 
 # Environments and Secrets
 .venv/
