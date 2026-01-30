@@ -14,7 +14,7 @@ Notebook/Untitled*
 
 # Optional: ignore all generated plots/images
 *.png
-*.pdf
+!Image/scatter_crime_plot.png
 
 # Environments and Secrets
 .venv/
