@@ -17,6 +17,13 @@ We designate the primary Crime dataset as the authoritative source of truth. To 
 
 ![Panemic Impact](Image/impact_of_covid.png)
 
+The data tells a very consistent story: while total volumes for "traditional" street crimes like Burglary or Drug Abuse dropped significantly, the "quality" or severity of crime shifted toward more violent or high-impact categories like Weapons Violations and Motor Vehicle Theft.
+
+* Why some of those numbers are so stark:
+  * Policy vs. Reality: Sharp drops in categories like Drug Abuse Violations (-76%) or Prostitution (-91%) often reflect changes in police enforcement priorities or court processing during and after the pandemic, rather than a total disappearance of those activities.
+  * The "Stay at Home" Variable: The -50.5% drop in Burglary is a classic data point from this era. When the "Pre-Covid" world shifted to everyone being home 24/7, the opportunity for residential burglary plummeted.
+  * The Weapons Spike: The 165.4% jump in Weapons Violations is statistically the most significant "impact" in our list. It suggests that while there were fewer arrests for minor offenses, the arrests made were much more likely to involve a firearm.
+
 ## Understanding Z-Scores and Crime Anomalies
 
 Z-score analysis highlights specialized anomalies—places where a specific crime type is occurring at a rate far beyond what is statistically normal for the rest of the city.
