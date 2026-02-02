@@ -9,13 +9,13 @@ We designate the primary Crime dataset as the authoritative source of truth. To 
 
 ## Chicago Crime Plot (2001 - 2025)
 
-![Crime Plot](Image/bar_analysis.png)
-
-![Panemic Impact](Image/impact_of_covid.png)
+![Percentage Crime Plot](Image/scatter_crime_plot.png)
 
 ## Understanding Percentage of Crime (Pre COVID & COVID & Post COVID)
 
-![Percentage Crime Plot](Image/scatter_crime_plot.png)
+![Crime Plot](Image/bar_analysis.png)
+
+![Panemic Impact](Image/impact_of_covid.png)
 
 ## Understanding Z-Scores and Crime Anomalies
 
