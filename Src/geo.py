@@ -4,9 +4,77 @@ import pyarrow as pa
 # Define Arrow string dtype for consistent string handling
 arrow_string = pd.ArrowDtype(pa.string())
 
+def impute_data(data: pd.DataFrame, keys: list, update_cols: list, mask: pd.Series) -> pd.DataFrame:
+    """
+    Imputes missing values in specified columns using a composite key lookup, 
+    ensuring that existing non-null values are never overwritten.
+
+    The function creates a temporary identifier from 'keys' to match rows with 
+    identical attributes. It builds a reference table from rows where 
+    'update_cols' are already populated. For rows identified by the 'mask', 
+    it fills NaNs only if a valid replacement is found in the reference table 
+    and the target cell is currently empty.
+
+    Args:
+        data (pd.DataFrame): The DataFrame to process.
+        keys (list): Column names used to generate the unique composite identifier.
+        update_cols (list): Columns where missing values should be imputed.
+        mask (pd.Series): Boolean Series indicating the rows eligible for imputation.
+
+    Returns:
+        pd.DataFrame: A copy of the DataFrame with null values filled where 
+            applicable, preserving all original non-null data.
+    """
+    # Deep copy
+    data = data.copy()
+    
+    # Generate Composite Key (Vectorized String Concatenation)
+    # Using pyarrow for performance and consistency
+    tmp = data[keys].astype(arrow_string)
+    data['composite_key'] = tmp[keys[0]]
+    for col in keys[1:]:
+        data['composite_key'] = data['composite_key'] + "_" + tmp[col]
+
+    # Build Lookup Table: Drop rows where target columns are null to ensure we only map valid data
+    lookup_source = data.dropna(subset=update_cols)
+    look_up = (
+        lookup_source.drop_duplicates(subset='composite_key')
+        .set_index('composite_key')[update_cols]
+    )
+
+    # Track unique rows modified
+    updated_indices = pd.Index([])
+    before_counts = mask.sum()
+
+    # Vectorized Imputation
+    for col in update_cols:
+        # Identify rows that meet the mask AND are currently null in this specific column
+        target_rows_mask = mask & data[col].isna()
+        
+        # Map values using the composite key for the filtered subset
+        impute_series = data.loc[target_rows_mask, 'composite_key'].map(look_up[col])
+        
+        # Identify rows where a match was actually found in the lookup table
+        actual_updates = impute_series.dropna().index
+        updated_indices = updated_indices.union(actual_updates)
+        
+        # Apply the update only to those specific rows
+        data.loc[actual_updates, col] = impute_series[actual_updates]
+
+    # Cleanup
+    data.drop(columns=['composite_key'], inplace=True)
+
+    # Report results
+    print(f"{'-' * 5} Imputation complete. {'-' * 5}")
+    print(f"Total rows in mask: {before_counts:,}")
+    print(f"Rows updated:       {len(updated_indices):,}")
+    print(f"Rows not updated:   {(before_counts - len(updated_indices)):,}")
+
+    return data
+
 
 def fill_from_composite_key(data: pd.DataFrame, key_col: list, target_str: str) ->  pd.DataFrame:
-    """
+    """ 
     Fills missing values in a target column based on a mapping derived from a composite key.
 
     This function identifies unique associations between a set of key columns and a 
@@ -111,7 +179,69 @@ def fill_geo_from_lookup(data: pd.DataFrame, key_col: str, fill_cols: list) -> p
 
 
 
+# def impute_data(data: pd.DataFrame, keys: list, update_cols: list, mask: bool) -> pd.DataFrame:
+#     """
+#     Imputes missing values in specified columns by mapping them to existing values 
+#     shared by rows with a common composite key and reports the number of unique rows updated.
 
+#     The function generates a temporary composite key from the 'keys' columns to identify 
+#     relationships. It builds a lookup table from rows where 'update_cols' are fully 
+#     populated and uses vectorized mapping to fill NaNs. It tracks and prints the 
+#     total number of unique rows modified during the process.
+
+#     Args:
+#         data (pd.DataFrame): The DataFrame containing missing values.
+#         keys (list): Column names used to create a unique composite identifier 
+#             for matching rows.
+#         update_cols (list): Column names where missing values (NaNs) should be imputed.
+#         mask (pd.Series): A boolean Series (of the same length as data) indicating the 
+#             rows where imputation should be attempted. 
+
+#     Returns:
+#         pd.DataFrame: The DataFrame with missing values in `update_cols` filled 
+#             wherever a valid match was found in the lookup table.
+#     """
+#     # deep copy
+#     data = data.copy()
+#     # Generate Composite Key (Vectorized String Concatenation)
+#     tmp = data[keys].astype("string[pyarrow]")
+#     data['composite_key'] = tmp[keys[0]]
+#     for col in keys[1:]:
+#         data['composite_key'] = data['composite_key'] + "_" + tmp[col]
+
+#     # Build Lookup Table
+#     lookup_source = data.dropna()
+#     look_up = (
+#         lookup_source.drop_duplicates(subset='composite_key')
+#         .set_index('composite_key')[update_cols]
+#     )
+
+#     # Initialize an empty Index to track which rows were modified
+#     updated_indices = pd.Index([])
+#     before_counts = mask.sum()
+
+#     # Vectorized Imputation
+#     for col in update_cols:
+#         impute_series = data.loc[mask, 'composite_key'].map(look_up[col])
+        
+#         # Identify which specific rows are actually getting a value
+#         rows_to_update = impute_series.dropna().index
+#         # Ensures each row is counted only once, regardless of how many columns were imputed.
+#         updated_indices = updated_indices.union(rows_to_update)
+#         # Updates the original DataFrame
+#         data.loc[mask, col] = impute_series
+
+#     # Cleanup
+#     data.drop(columns=['composite_key'], inplace=True)
+
+#     # Print message
+#     print(f"{'-' * 20} Imputation complete. {'-' * 20}")
+#     print(f"{':' * 10} Total rows: "
+#           f"{before_counts:,} & "
+#           f"Updated: {(len(updated_indices)):,} & "
+#           f"Not Updated: {(before_counts - len(updated_indices)):,}")
+
+#     return data
 
 
 # def location_fill(data: pd.DataFrame, geo_cols: list = None, key_index: str = None) -> pd.DataFrame:
