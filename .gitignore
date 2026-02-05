@@ -12,6 +12,7 @@ Notebook/*Copy*.*
 # Jupyter Notebooks
 .ipynb_checkpoints/
 Notebook/Untitled*
+SQL/Untitled*
 
 # Environments and Secrets
 .venv/
