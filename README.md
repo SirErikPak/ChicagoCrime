@@ -6,6 +6,7 @@ We designate the primary Crime dataset as the authoritative source of truth. To 
 
 * [Data Wrangling Notebook](Notebook/ChicagoCrimeWrangle.ipynb)
 * [Data Visualize Notebook](Notebook/ChicagoCrimeVisualize.ipynb)
+* [Data Visualizing Covid Notebook](Notebook/ChicagoCrimeCovidVisualize)
 
 ## Chicago Crime Plot (2001 - 2025)
 
@@ -15,7 +16,11 @@ We designate the primary Crime dataset as the authoritative source of truth. To 
 
 ![Crime Plot](Image/bar_analysis.png)
 
-![Panemic Impact](Image/impact_of_covid.png)
+![Panemic Impact Bar](Image/impact_of_covid.png)
+
+![Panemic Impact Box - Indexed](Image/box_indexed_crime_plot.png)
+
+![Panemic Impact Box - Non-Indexed](Image/box_nonindexed_crime_plot.png)
 
 ## Summary
 
