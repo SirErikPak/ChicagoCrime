@@ -120,6 +120,8 @@ The resulting clusters do **not** reflect crime volume or severity. Instead, the
 * Robbery
   * This larger cluster reflects a group of offenses that share long‑term trends and seasonal patterns. Their synchronized behavior suggests they respond similarly to opportunity structures, economic conditions, or shifts in routine activity patterns.
 
+#### Centroids Analysis
+
 ![Centroids Plot](Image/cluster_centroids_analysis.png)
 
 #### Insights & Observations
