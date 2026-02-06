@@ -31,7 +31,7 @@ fbi_codes = {
 
 # Mapping of Chicago Community Area ID to Official Neighborhood Name
 chicago_communities = {
-    "01": "Rogers Park", "02": "West Ridge", "03": "Uptown", "04": "Lincoln Square", "5": "North Center",
+    "01": "Rogers Park", "02": "West Ridge", "03": "Uptown", "04": "Lincoln Square", "05": "North Center",
     "06": "Lake View", "07": "Lincoln Park", "08": "Near North Side", "09": "Edison Park", "10": "Norwood Park",
     "11": "Jefferson Park", "12": "Forest Glen", "13": "North Park", "14": "Albany Park", "15": "Portage Park",
     "16": "Irving Park", "17": "Dunning", "18": "Mont Clare", "19": "Belmont Cragin", "20": "Hermosa",

@@ -120,6 +120,17 @@ The resulting clusters do **not** reflect crime volume or severity. Instead, the
 * Robbery
   * This larger cluster reflects a group of offenses that share long‑term trends and seasonal patterns. Their synchronized behavior suggests they respond similarly to opportunity structures, economic conditions, or shifts in routine activity patterns.
 
+![Centroids Plot](Image/cluster_centroids_analysis.png)
+
+#### Insights & Observations
+
+* Inverse Relationships: Cluster 1 and Cluster 3 often move in opposite directions. For example, in 2020, Cluster 1 reached a high of 1.62, while Cluster 3 reached a low of -0.91.
+* This group stayed below average for nearly 15 years, hitting its lowest point around 2013. However, it saw a surge starting in 2016, peaking in 2020. Interestingly, it shows a very sharp downward trend toward 2025.
+* Cluster 2 started very strongly in the early 2000s but crashed hard between 2012 and 2015. It had a brief surge in the late 2010s but is currently drifting back into negative territory.
+* Cluster 3 maintained high positive values for the first decade (2001–2011). Since 2014, it has been in long-term decline and has remained the lowest-performing group for several years.
+* The 2024-2025 Pivot: All three clusters are currently showing a downward trend as of 2025. Cluster 1, which was dominant during the pandemic years, has crashed back down to -0.95.
+* Volatility: Cluster 1 shows the most dramatic "swing," moving from deep negatives in the early 2010s to sharp positives in the early 2020s.
+
 ##### Conclusion
 
 Using Z‑scores with correlation distance and complete linkage reveals meaningful structure in the temporal behavior of crime categories. The clusters represent **coherent groups of crimes that move together over time**, offering valuable insight for forecasting, operational planning, and strategic decision‑making.

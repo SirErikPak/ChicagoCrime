@@ -37,6 +37,10 @@ def zscore_anomaly(
             .sort_values(time_col)
     )
 
+    # Ensure the columns are standard types to avoid Arrow issues
+    counts[category_col] = counts[category_col].astype(str)
+    counts[time_col] = counts[time_col].astype(int)
+
     # Group by category to compute historical stats
     category_groups = counts.groupby(category_col, observed=False)['count']
 
