@@ -11,9 +11,9 @@ def zscore_anomaly(
 ) -> pd.DataFrame:
     """
     Computes per-category Z-scores across all time periods.
-    
-    Each category (e.g., crime type) is standardized using its own
-    historical mean and standard deviation across all years.
+    Each category is standardized using its own historical mean and 
+    standard deviation across all years measureing how unusual 
+    each year's count is relative to its own historical behavior.
     
     Args:
         data (pd.DataFrame): Raw crime data.
@@ -45,11 +45,13 @@ def zscore_anomaly(
     category_groups = counts.groupby(category_col, observed=False)['count']
 
     # Compute per-category mean and std
+    # A crime type with no variation across time should have z‑scores of 0
     category_mean = category_groups.transform('mean')
     category_std = category_groups.transform('std').fillna(1).replace(0, 1)
 
     # Compute Z-scores
     counts['z_score'] = (counts['count'] - category_mean) / category_std
+    # edge case (e.g., all zeros, all identical values)
     counts['z_score'] = counts['z_score'].replace([np.inf, -np.inf], 0).fillna(0)
 
     # Pivot into a category × time matrix

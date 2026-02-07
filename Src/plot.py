@@ -6,8 +6,101 @@ import matplotlib.ticker as mtick
 import scipy.cluster.hierarchy as hierarchy
 from scipy.spatial.distance import pdist, squareform
 from matplotlib.colors import LinearSegmentedColormap
+from scatterd import scatterd
 # Python file imports
 import hierarchy_clustering
+
+
+def fancy_pca_plot(
+    data: pd.DataFrame,
+    pc_scores: np.ndarray,
+    pca_model_object: object,
+    labels: np.ndarray = None,
+    file: str = None,
+    point_size: int = 90,
+    font_size: int = 14,
+    density: bool = True
+):
+    """
+    Enhanced PCA scatter plot with density overlay and sorted loadings.
+
+    Parameters
+    ----------
+    data : DataFrame
+        Original dataset used for PCA (columns = variables).
+    pc_scores : ndarray
+        PCA-transformed coordinates (n_samples x n_components).
+    pca_model_object : PCA
+        Fitted PCA model.
+    labels : array-like, optional
+        Cluster IDs or group labels for coloring points.
+    file : str, optional
+        If provided, saves the figure to ../Image/{file}.png.
+    point_size : int
+        Marker size.
+    font_size : int
+        Font size for labels.
+    density : bool
+        Whether to overlay KDE density.
+    """
+
+    # Compute and sort loadings for interpretation
+    loadings = pd.DataFrame(
+        pca_model_object.components_.T,
+        index=data.columns,
+        columns=[f"PC{i+1}" for i in range(pca_model_object.n_components_)]
+    ).sort_values("PC1", ascending=False)
+
+    # Density settings (only if enabled)
+    args_density = (
+        {'fill': True, 'thresh': 0, 'levels': 100, 'cmap': "vlag"}
+        if density else None
+    )
+
+    # Build scatter plot with optional density overlay
+    fig, ax = scatterd(
+        pc_scores[:, 0],
+        pc_scores[:, 1],
+        labels=labels if data.index.values is not None else None,
+        grid=None,
+        fontcolor='k',
+        fontsize=font_size,
+        s=point_size,
+        verbose=0,
+        args_density=args_density
+    )
+
+    # Axis labels with explained variance
+    evr = pca_model_object.explained_variance_ratio_
+    ax.set_xlabel(f"PC1 ({evr[0]*100:.2f}% Explained Variance)", fontsize=font_size)
+    ax.set_ylabel(f"PC2 ({evr[1]*100:.2f}% Explained Variance)", fontsize=font_size)
+
+    # dispaly explained variance
+    print("----- PCA Variance Explained -----")
+    print(f"Total PC1 & PC2 Variance: {pca_model_object.explained_variance_ratio_[:2].sum():.2f}")
+    print(f"Explained Variance Ratios: \n"
+          f"{pca_model_object.explained_variance_ratio_}\n") 
+
+    # Legend for clusters if labels are provided
+    if labels is not None:
+        ax.legend(
+            title="Cluster",
+            loc="upper left",
+            fontsize=font_size - 2,
+            title_fontsize=font_size,
+            frameon=False
+        )
+    # Create a dataframe for the map
+    df_pca = pd.DataFrame(data = pc_scores[:, :2], columns = ['PC1', 'PC2'], index=data.index)
+
+    # Save file if requested
+    if file:
+        plt.savefig(f"../Image/{file}.png", dpi=300, bbox_inches='tight')
+
+    plt.tight_layout()
+    plt.show()
+
+    return loadings, df_pca
 
 
 def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
