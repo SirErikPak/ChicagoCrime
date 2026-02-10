@@ -34,7 +34,7 @@ def fancy_pca_plot(
         Fitted PCA model.
     labels : array-like, optional
         Cluster IDs or group labels for coloring points.
-    file : str, optional
+    clusters : array-like, optional
         If provided, saves the figure to ../Image/{file}.png.
     point_size : int
         Marker size.
@@ -61,7 +61,7 @@ def fancy_pca_plot(
     fig, ax = scatterd(
         pc_scores[:, 0],
         pc_scores[:, 1],
-        labels=labels if data.index.values is not None else None,
+        labels=labels,
         grid=None,
         fontcolor='k',
         fontsize=font_size,
