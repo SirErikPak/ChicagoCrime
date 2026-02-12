@@ -7,7 +7,7 @@ We designate the primary Crime dataset as the authoritative source of truth. To 
 * [Data Wrangling Notebook](Notebook/ChicagoCrimeWrangle.ipynb)
 * [Data Visualize Notebook](Notebook/ChicagoCrimeVisualize.ipynb)
 * [Data Visualizing Covid Notebook](Notebook/ChicagoCrimeCovidVisualize.ipynb)
-* [Structural Analysis of Crime (Pre$\rightarrow$Covid$\rightarrow$Post)](ChicagoCrimeAnalysisEra.ipynb)
+* [Structural Analysis of Crime (Pre --> Covid --> Post)](ChicagoCrimeAnalysisEra.ipynb)
 * [Cluster Analysis Notebook](Notebook/ChicagoCrimeExploratoryClusterAnalysis.ipynb)
 
 ## Chicago Crime Plot (2001 - 2025)
