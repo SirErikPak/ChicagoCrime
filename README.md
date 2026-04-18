@@ -41,7 +41,7 @@ The dataset provides a fascinating look at how crime patterns shifted across the
 
 ## Understanding Z-Scores and Crime Anomalies
 
-Z-score analysis highlights specialized anomalies—places where a specific crime type is occurring at a rate far beyond what is statistically normal for the rest of the city.
+Z-score analysis highlights specialized anomalies, places where a specific crime type is occurring at a rate far beyond what is statistically normal for the rest of the city.
 
 * **Z-score of 3.0**: The value is higher than about 99.87% of all values in a normal distribution (extreme outlier)
 * **Z-score of 2.0**: The value is higher than about 97.7% of all values (significantly higher than historical average)
