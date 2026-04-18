@@ -137,8 +137,8 @@ The resulting clusters do **not** reflect crime volume or severity. Instead, the
 
 ##### Conclusion
 
-In calculating the mean Z-score path for each cluster, we revealed the group's underlying pulse. These centroids provide a clear visualization of the shared momentum within a cluster, allowing analysts to distinguish between long-term systemic shifts and short-term anomalies.
+In calculating the mean Z-score path for each cluster, we revealed the group's underlying pulse. These centroids provide a clear visualization of the shared momentum within a cluster to distinguish between long-term systemic shifts and short-term anomalies.
 
 From a strategic perspective, these centroids serve as benchmarks for operational planning and resource allocation. Instead of managing dozens of individual crime categories, decision-makers can monitor a few primary centroid paths to identify which "temporal wave" a specific offense is riding. This simplifies the transition from data to action, as departments can align their long-term strategies with the specific lifecycle, whether a steady decline or a recent surge, which is both characterized by the cluster's central path.
 
-Finally, centroid analysis enhances forecasting accuracy by providing a stable baseline for comparative assessment. By measuring the distance between a current crime trend and its assigned centroid, analysts can detect patterns that might precede a major shift in the criminal landscape. Ultimately, these centroids transform abstract statistical correlations into a manageable set of strategic profiles, enabling more precise interventions.
+Finally, centroid analysis enhances forecasting accuracy by providing a stable baseline for comparative assessment. By measuring the distance between a current crime trend and its assigned centroid, we can detect patterns that might precede a major shift in the criminal landscape. Ultimately, these centroids transform abstract statistical correlations into a manageable set of strategic profiles, enabling more precise interventions.
