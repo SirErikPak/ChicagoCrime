@@ -15,6 +15,11 @@ def impute_data(data: pd.DataFrame, keys: list, update_cols: list, mask: pd.Seri
     it fills NaNs only if a valid replacement is found in the reference table 
     and the target cell is currently empty.
 
+    Tight composite keys are used to ensure that imputation only occurs between rows 
+    that are likely to represent the same location or event, which is critical in a 
+    geographic crime dataset. This approach minimizes the risk of incorrect imputation 
+    across different areas while maximizing the use of available data.
+
     Args:
         data (pd.DataFrame): The DataFrame to process.
         keys (list): Column names used to generate the unique composite identifier.
