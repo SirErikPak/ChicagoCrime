@@ -1,6 +1,6 @@
 # Chicago Crime Analysis (2001 - 2025)
 
-The data from the [Chicago Data Portal](https://data.cityofchicago.org/browse?category=Public+Safety&sortBy=most_accessed&page=1&pageSize=20) and Crime dataset were enriched using multiple datasets from the portal. We initially stored them in a PostgreSQL database to generate the enriched dataset by joining multiple datasets using the_geom. However, we discovered inconsistencies in the police beat, district, and sector fields. All missing fields were determined using multiple fields to generate the most accurate information.
+The data from the [Chicago Data Portal](https://data.cityofchicago.org/browse?category=Public+Safety&sortBy=most_accessed&page=1&pageSize=20) and the Crime dataset were enriched using multiple datasets from the portal. We initially stored them in a PostgreSQL database to generate the enriched dataset by joining multiple datasets using the_geom. However, we discovered inconsistencies in the police beat, district, and sector fields. All missing fields were determined using multiple fields to generate the most accurate information.
 
 We designate the primary Crime dataset as the authoritative source of truth. To ensure consistency and address missing values, we perform internal imputation using data from other sources to fill corresponding NaN entries in location-based fields.
 
@@ -27,17 +27,31 @@ We designate the primary Crime dataset as the authoritative source of truth. To 
 
 ## Summary
 
-The dataset provides a fascinating look at how crime patterns shifted across the "Pre-COVID," "COVID," and "Post-COVID" eras. Looking at the raw counts and the percentage changes, a few clear narratives emerge regarding public safety and social behavior during these periods. The data tells a very consistent story: while total volumes for "traditional" street crimes like Burglary or Drug Abuse dropped significantly, the "quality" or severity of crime shifted toward more violent or high-impact categories like Weapons Violations and Motor Vehicle Theft.
+The dataset provides a fascinating look at how crime patterns shifted across the Pre-COVID, COVID, and Post-COVID eras. Looking at the raw counts and the percentage changes, a few clear narratives emerge regarding public safety and social behavior during these periods. The data tells a consistent story: while total volumes for traditional street crimes like Burglary or Drug Abuse dropped significantly, the composition of crime shifted toward more violent or high-impact categories like Weapons Violations and Motor Vehicle Theft.
 
-* The most jarring shifts occurred in high-impact violent crimes and weapons violations. Even as many other crimes dropped, these categories saw massive growth from the Pre-Covid to Post-Covid eras.
-* Homicide (1st or 2nd Degree): Saw a 54.2% increase from Pre-COVID to Post-COVID. Interestingly, it peaked during the Covid period and has since cooled slightly (-36.5% from Covid to Post-Covid), though it remains well above the baseline.
-* Weapons Violations: This is the most extreme shift in the table. There was a 165.4% increase from Pre-COVID to Post-COVID.
-* Motor Vehicle Theft: A massive surge in the Post-Covid era, up 91.1% compared to the pre-COVID baseline. Unlike Homicide, this trend is still accelerating, growing 29.5% just between the Covid and Post-Covid periods.
-* The "Lockdown" Effect (The Declines) Crimes that generally require "face-to-face" interaction or people being out in public spaces saw massive drops, many of which have not returned to previous levels.
-* Drug Abuse Violations: Dropped by 76% from Pre-COVID to Post-COVID.Prostitution & Gambling: Both saw near-total collapses (down 91% and 96.7% respectively), likely due to the closure of physical venues and shifts in police priorities.
-* Burglary: Dropped by 50.5% Post-Covid. This is often attributed to more people working from home, making residential targets "occupied" and therefore riskier for burglars.
-* The Fraud stands out as an outlier while it spiked by 61% from pre-COVID to post-COVID. However, the data shows an incredibly high "Impact" score during the Covid period (108.9%), suggesting a massive wave of activity (potentially related to relief fund scams or digital shift) that has begun to subside.
-* Comparison of Key Offenses (Proportions of Total Crime): The shift in the "nature" of crime is best seen in the Crime Proportion columns. While Larceny-Theft remains the most common crime (roughly 21-23% of all records), other categories shifted the "makeup" of the city's crime profile:
+#### High-impact and violent crimes
+
+The most jarring shifts occurred in weapons violations and motor vehicle theft. Even as many other crimes dropped, these categories saw significant growth from the Pre-COVID to the post-COVID eras.
+
+* **Homicide (1st or 2nd Degree):** Rose +50.1% during COVID, but has since fully recovered to pre-COVID levels (pre vs. post: p=0.814, negligible effect size), making it the only violent crime to complete a full cycle.
+* **Weapons Violations:** The most extreme sustained shift. Spiked +119.6% during COVID and remains +81.2% above the pre-COVID baseline post-COVID.
+* **Motor Vehicle Theft:** Up +32.8% compared to the pre-COVID baseline, and still actively rising (one of only 4 crimes still in active transition).
+* 
+#### The "Lockdown" Effect (The Declines)
+
+Crimes that generally require face-to-face interaction or people being out in public spaces saw massive drops, many of which have not returned to previous levels.
+
+* **Drug Abuse Violations:** Dropped −83.6% from Pre-COVID to Post-COVID. This is consistent with reduced street-level enforcement during lockdowns, shifts in policing priorities, and decriminalization trends, though it should not be read as a drop in actual drug use.
+* **Prostitution & Gambling:** Near-total collapses down 93.5% and 97.8% respectively, likely due to the closure of physical venues and shifts in police priorities.
+* **Burglary:** Dropped −63.4% Pre -> COVID. One plausible explanation is the shift to remote work, which makes residential targets riskier, though this is a hypothesis, not a finding directly tested by the data.
+
+#### Fraud the outlier
+
+Fraud stands out as an outlier: it spiked significantly during COVID, with the exact Pre -> Post figure visible in the chart. The COVID-era surge is consistent with pandemic-era scams and the rapid shift to digital transactions, though direct causation cannot be confirmed from this data alone.
+
+#### Composition of crime
+
+The shift in the nature of crime is best seen in the crime proportion columns. While Larceny–Theft remains the most common crime (roughly 21–23% of all records), other categories shifted the makeup of the city's crime profile. The two structural movements, collapse of opportunity-driven crimes and acceleration of violence-adjacent offenses, together represent a fundamental recomposition of Chicago's crime landscape, not merely a change in volume.
 
 ## Understanding Z-Scores and Crime Anomalies
 
