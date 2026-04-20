@@ -137,7 +137,7 @@ The resulting clusters do **not** reflect crime volume or severity. Instead, the
 
 ##### Conclusion
 
-In calculating the mean Z-score path for each cluster, we revealed the group's underlying pulse. These centroids provide a clear visualization of the shared momentum within a cluster to distinguish between long-term systemic shifts and short-term anomalies.
+In calculating the mean Z-score path for each cluster, we revealed the group's underlying pulse. These centroids provide a clear visualization of the shared momentum within a cluster, helping distinguish long-term systemic shifts from short-term anomalies.
 
 From a strategic perspective, these centroids serve as benchmarks for operational planning and resource allocation. Instead of managing dozens of individual crime categories, decision-makers can monitor a few primary centroid paths to identify which "temporal wave" a specific offense is riding. This simplifies the transition from data to action, as departments can align their long-term strategies with the specific lifecycle, whether a steady decline or a recent surge, which is both characterized by the cluster's central path.
 
