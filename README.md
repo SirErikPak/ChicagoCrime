@@ -36,7 +36,7 @@ The most jarring shifts occurred in weapons violations and motor vehicle theft. 
 * **Homicide (1st or 2nd Degree):** Rose +50.1% during COVID, but has since fully recovered to pre-COVID levels (pre vs. post: p=0.814, negligible effect size), making it the only violent crime to complete a full cycle.
 * **Weapons Violations:** The most extreme sustained shift. Spiked +119.6% during COVID and remains +81.2% above the pre-COVID baseline post-COVID.
 * **Motor Vehicle Theft:** Up +32.8% compared to the pre-COVID baseline, and still actively rising (one of only 4 crimes still in active transition).
-* 
+
 #### The "Lockdown" Effect (The Declines)
 
 Crimes that generally require face-to-face interaction or people being out in public spaces saw massive drops, many of which have not returned to previous levels.
