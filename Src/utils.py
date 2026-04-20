@@ -109,6 +109,10 @@ def make_crime_year_crosstab(data: pd.DataFrame, colA: str, rowB: str):
           .reset_index(name='count')  # GroupBy results return a Series with a MultiIndex 
     )                                 # converts the index levels back into normal columns
     
+    # Cast Arrow categoricals to str for pivot compatibility
+    crime[colA] = crime[colA].astype(str)
+    crime[rowB] = crime[rowB].astype(str)
+
     # Pivot to wide format
     # index becomes the rows of the pivot table
     # columns becomes the columns  
