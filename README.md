@@ -6,7 +6,7 @@ We designate the primary Crime dataset as the authoritative source of truth. To 
 
 * [Data Wrangling Notebook](Notebook/ChicagoCrimeWrangle.ipynb)
 * [Data Visualize Notebook](Notebook/ChicagoCrimeVisualize.ipynb)
-* [Data Visualizing Covid Notebook](Notebook/ChicagoCrimeCovidVisualize.ipynb)
+* [Data Visualizing ERA Notebook](Notebook/ChicagoCrimeEraVisualize.ipynb)
 * [Structural Analysis of Crime (Pre --> Covid --> Post)](Notebook/ChicagoCrimeAnalysisEra.ipynb)
 * [Cluster Analysis Notebook](Notebook/ChicagoCrimeExploratoryClusterAnalysis.ipynb)
 * [Strutural Analysis](Notebook/ChicagoCrimeStructuralAnalysis.ipynb)
@@ -47,7 +47,7 @@ Z-score analysis highlights specialized anomalies, places where a specific crime
 * **Z-score of 2.0**: The value is higher than about 97.7% of all values (significantly higher than historical average)
 * **Z-score of -1.0**: The value is lower than about 84% of all values (mild decrease)
 
-![Z-Score Heatmap](Image/z-score_heatmape.png)
+![Z-Score Heatmap](Image/z-score_heatmap.png)
 
 ## Interpreting the Clustering Heatmaps
 
