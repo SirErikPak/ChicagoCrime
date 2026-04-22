@@ -47,12 +47,39 @@ Usage:
     results   = hc.compare_dtw_era_rhythms(dtw_pre, dtw_covid, dtw_post)
 """
 
+import warnings
 import numpy as np
 import pandas as pd
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.cluster.hierarchy import inconsistent
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import spearmanr
+
+# ── Optional dependency: tslearn ───────────────────────────────────────────────
+# Loaded once at module level — avoids repeated import overhead on every DTW call.
+# Reference: https://tslearn.readthedocs.io/en/stable/installation.html
+try:
+    from tslearn.metrics import cdist_dtw
+    _TSLEARN_AVAILABLE = True
+except ImportError:
+    _TSLEARN_AVAILABLE = False
+
+# ── Public API ─────────────────────────────────────────────────────────────────
+# Defines what is exported when a caller does `from hc import *`.
+# Prevents internal names (np, pd, linkage, spearmanr, etc.) from leaking.
+# Reference: https://docs.python.org/3/tutorial/modules.html#importing-from-a-package
+__all__ = [
+    'linkage_matrix',
+    'inconsistency_matrix',
+    'choose_clusters_from_inconsistency',
+    'choose_clusters_from_linkage',
+    'consensus_k',
+    'compute_correlation_distance_matrix',
+    'compute_dtw_distance_matrix',
+    'compute_dtw_single_era',
+    'compare_dtw_era_rhythms',
+    'print_cluster_summary',
+]
 
 
 # ── Constants ──────────────────────────────────────────────────────────────────
@@ -175,6 +202,19 @@ def choose_clusters_from_inconsistency(
     consensus = max(set(k_values), key=k_values.count)
     agreement = k_values.count(consensus) / len(k_values)
 
+    # Warn if all thresholds collapsed to a single cluster — trivial result.
+    # Likely cause: thresholds too high for this dataset, or data is genuinely
+    # homogeneous. Inspect dendrogram before proceeding.
+    # Reference: https://docs.python.org/3/library/warnings.html
+    if consensus == 1:
+        warnings.warn(
+            f"consensus_k=1: all {len(k_values)} thresholds collapsed to a single "
+            f"cluster. Consider lowering thresholds or inspecting the dendrogram. "
+            f"Current thresholds: {thresholds}",
+            UserWarning,
+            stacklevel=2
+        )
+
     return {
         'method'      : method,
         'metric'      : metric,
@@ -211,15 +251,15 @@ def choose_clusters_from_linkage(Z, method='average', metric='correlation'):
     """
     # merge distances are in column 2 of Z
     merge_distances = Z[:, 2]
-    n               = len(merge_distances)
 
     # compute gaps between consecutive merge distances
-    gaps      = np.diff(merge_distances)
-    max_gap   = np.argmax(gaps)
+    gaps    = np.diff(merge_distances)
+    max_gap = np.argmax(gaps)
 
     # k = number of clusters when we cut just before the largest gap
-    # at step max_gap, there are (n - max_gap) clusters remaining
-    k             = n - max_gap
+    # len(merge_distances) = n-1 merges for n observations
+    # at step max_gap, there are (len(merge_distances) - max_gap) clusters remaining
+    k             = len(merge_distances) - max_gap
     gap_magnitude = gaps[max_gap]
 
     return {
@@ -347,12 +387,11 @@ def compute_dtw_distance_matrix(
         - Option B weights: pre_covid=0.15, covid=0.55, post_covid=0.30
         - Distances are normalized by series length for comparability
     """
-    try:
-        from tslearn.metrics import cdist_dtw
-    except ImportError:
+    if not _TSLEARN_AVAILABLE:
         raise ImportError(
             "tslearn is required for DTW computation. "
-            "Install with: pip install tslearn"
+            "Install with: pip install tslearn — "
+            "https://tslearn.readthedocs.io/en/stable/installation.html"
         )
 
     n    = len(crime_labels)
@@ -452,12 +491,11 @@ def compute_dtw_single_era(
         - COVID:      warping_window = max(1, int(0.10 × 34))  = 3 months
         - Post-COVID: warping_window = max(1, int(0.10 × 36))  = 3 months
     """
-    try:
-        from tslearn.metrics import cdist_dtw
-    except ImportError:
+    if not _TSLEARN_AVAILABLE:
         raise ImportError(
             "tslearn is required for DTW computation. "
-            "Install with: pip install tslearn"
+            "Install with: pip install tslearn — "
+            "https://tslearn.readthedocs.io/en/stable/installation.html"
         )
 
     valid_eras = ['pre_covid', 'covid', 'post_covid']
@@ -532,8 +570,31 @@ def compare_dtw_era_rhythms(dtw_pre, dtw_covid, dtw_post):
             'rhythm_shift_covid'  : degree of rhythm change during COVID (1 - rho)
             'rhythm_shift_post'   : degree of rhythm change in post-COVID (1 - rho)
             'interpretation'      : human-readable result string
+
+    Notes:
+        - Spearman rho values are valid measures of rank agreement between matrices.
+        - P-values are approximate: the 325 pairwise distances (26×25/2) are not
+          independent — they share row/column entries — which violates the standard
+          independence assumption and makes p-values anti-conservative (too small).
+          Treat p-values as indicative rather than exact.
+        - The Mantel test is the correct permutation-based approach for testing
+          matrix correlation significance when independence cannot be assumed.
+          Reference: https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.distance.squareform.html
     """
-    # Flatten upper triangles for pairwise comparison
+    # ── Input validation ───────────────────────────────────────────────────────
+    shapes = [dtw_pre.shape, dtw_covid.shape, dtw_post.shape]
+    if len(set(shapes)) != 1:
+        raise ValueError(
+            f"All DTW matrices must have the same shape. "
+            f"Got pre={dtw_pre.shape}, covid={dtw_covid.shape}, "
+            f"post={dtw_post.shape}."
+        )
+    if dtw_pre.shape[0] != dtw_pre.shape[1]:
+        raise ValueError(
+            f"DTW matrices must be square. Got shape {dtw_pre.shape}."
+        )
+
+    # ── Flatten upper triangles for pairwise comparison ───────────────────────
     n   = len(dtw_pre)
     idx = np.triu_indices(n, k=1)
 
@@ -616,4 +677,10 @@ def print_cluster_summary(k_inconsistency, k_linkage, consensus):
     print(f"  final_k      = {consensus['final_k']}")
     print(f"  confidence   = {consensus['confidence']}")
     print(f"  {consensus['recommendation']}")
+    if not consensus['agreed']:
+        lo = min(consensus['k_inconsistency'], consensus['k_linkage'])
+        hi = max(consensus['k_inconsistency'], consensus['k_linkage'])
+        print(f"\n  ACTION REQUIRED: Methods disagree — inspect the dendrogram.")
+        print(f"  Suggested range to evaluate: k in [{lo}, {hi}]")
+        print(f"  Use silhouette scores to guide final selection.")
     print(f"{'='*60}")
