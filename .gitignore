@@ -8,6 +8,7 @@ Data/
 Backup/
 .DS_Store
 Notebook/*Copy*
+Scr/*old*
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
