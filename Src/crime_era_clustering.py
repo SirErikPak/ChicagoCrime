@@ -1,5 +1,4 @@
 """
-hc.py — Hierarchical Clustering Module
 =======================================
 Provides hierarchical clustering utilities for crime era analysis.
 
