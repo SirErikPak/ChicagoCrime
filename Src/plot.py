@@ -11,6 +11,7 @@ from scatterd import scatterd
 import hierarchy_clustering
 
 
+# ── 1. Fancy PCA Plot ────────────────────────────────────────────────
 def fancy_pca_plot(
     data: pd.DataFrame,
     pc_scores: np.ndarray,
@@ -103,6 +104,7 @@ def fancy_pca_plot(
     return loadings, df_pca
 
 
+# ── 2. Correlation Heatmap ────────────────────────────────────────────────
 def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
     """
     Plot a heatmap of pairwise correlation distances between rows of a DataFrame.
@@ -173,6 +175,7 @@ def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
     plt.show()
 
 
+# ── 3. Hierarchical Clustering Dendrogram ────────────────────────────────────────────────
 def plot_clustering(
     data: pd.DataFrame, 
     method: str, 
@@ -211,7 +214,7 @@ def plot_clustering(
     plt.show()
 
 
-
+# ──4. Bar Plot ────────────────────────────────────────────────
 def bar_plot(data: pd.DataFrame, 
              count: str, 
              index: str, 
@@ -294,6 +297,7 @@ def bar_plot(data: pd.DataFrame,
     plt.show()
 
 
+# ── 5. Line Plot ────────────────────────────────────────────────
 def line_plot(data: pd.DataFrame, column_name: str, category_name: str, numeric_name: str, col_wrap=4, rotation: int=45, ha='right') -> None:
     """
     Creates a faceted line plot for time-series crime data with peak indicators.
@@ -368,7 +372,7 @@ def line_plot(data: pd.DataFrame, column_name: str, category_name: str, numeric_
     plt.show()
 
 
-
+# ── 6. Stacked Bar Plot ────────────────────────────────────────────────
 def stacked_bar_plot(data, title='', figsize=(12, 8), cmap='Set2', sort_index=True):
     """
     Generates a horizontal stacked bar chart showing percentage distribution per row,
@@ -437,6 +441,7 @@ def stacked_bar_plot(data, title='', figsize=(12, 8), cmap='Set2', sort_index=Tr
     plt.show()
 
 
+# ── 7. Inconsistency Plot ────────────────────────────────────────────────
 def plot_cuts(heights: np.array, incons: np.array) -> None:
     # Sort by height (optional but makes the plot cleaner)
     order = np.argsort(heights)
