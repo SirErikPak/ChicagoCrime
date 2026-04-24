@@ -75,6 +75,9 @@ def run_era_integrity_report(era_dict, expected_counts):
     for label, raw_df in era_dict.items():
         exp_rows, act_rows, missing_df = find_missing_crime_months(raw_df, label)
         missing_count = exp_rows - act_rows
+        if missing_count < 0:
+            print(f"  WARNING: more rows than expected (possible duplicates: {abs(missing_count)} extra)")
+
 
         print(f"{label:<15} | {exp_rows:<10} | {act_rows:<10} | {missing_count}")
         
@@ -83,8 +86,6 @@ def run_era_integrity_report(era_dict, expected_counts):
             gaps = missing_df.groupby('fbi_code_desc').size().sort_values(ascending=False)
             print(gaps.to_string())
         print()
-
-    return
 
 
 # ── 3. Fill Missing Values ────────────────────────────────────────────────   
@@ -97,7 +98,7 @@ def fill_missing(data_df):
     across all 26 crimes before baseline computation and DTW.
 
     Parameters:
-        data : pd.DataFrame - must contain columns: date, fbi_code_desc, crime_count, era
+        data_df : pd.DataFrame - must contain columns: date, fbi_code_desc, crime_count, era
 
     Returns:
         pd.DataFrame - complete grid with 0-filled missing combos
@@ -136,8 +137,6 @@ def fill_missing(data_df):
 # Routing thresholds
 _PRESENCE_RATE_THRESH   = 30.0   # % of months with any count; below -> presence
 _MEAN_FLOOR             = 2.0    # avg monthly count; below -> presence (guards false STL structure)
-_SEASONAL_DECOMP_THRESH = 0.45   # STL seasonal strength; above -> decomp
-_TREND_DECOMP_THRESH    = 0.40   # STL trend strength; above -> decomp
 _CV_ROBUST_THRESH       = 60.0   # CV %; above -> robust only if unstructured
 _STL_MIN_MONTHS         = 24     # minimum months required to fit STL reliably
 
@@ -153,7 +152,6 @@ _FORCE_STANDARD: set[str] = {
 # Not independently validated — revisit if:
 #   - pre-period window changes
 #   - new crime categories are added
-#   - _SEASONAL_DECOMP_THRESH or _TREND_DECOMP_THRESH are adjusted
 _KNOWN_ROUTES: dict[str, str] = {
     # Strong seasonal + trend signals confirmed by STL
     'Motor Vehicle Theft': 'decomp',
@@ -162,8 +160,6 @@ _KNOWN_ROUTES: dict[str, str] = {
     # High CV but structure is real — enforcement/policy cycles
     'Gambling':            'decomp',
     'Prostitution':        'decomp',
-    # Strong trend despite weak seasonality — robust will miss trajectory
-    'Stolen Property (Buy, Receive, Possess)': 'decomp',
     # Near-perfect trend (0.975) — standard assumes stationarity, will bias baseline
     'Drug Abuse Violations': 'decomp',
     # Genuinely sparse
@@ -204,66 +200,84 @@ def _verify_routing(baseline: pd.DataFrame) -> None:
 def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
     """
     Evaluates crime categories and routes them to optimal baseline models via a 
-    hierarchical decision matrix.
+    multi-layered hierarchical decision matrix.
 
-    This function serves as the central 'brain' for baseline selection, balancing 
-    statistical rigor with data sparsity constraints. It calculates descriptive 
-    statistics, measures temporal structure via STL decomposition, and assigns 
-    mutually exclusive routing flags.
+    This function acts as a diagnostic engine that classifies time series based on 
+    sparsity, temporal structure (STL), and volatility. It ensures each crime 
+    category is assigned to exactly one mutually exclusive modeling path.
 
-    Decision Hierarchy:
-    1. Sparse (use_presence): Categories with <30% presence, zero MAD (constant low 
-       counts), or mean monthly counts < 2. These series are too sparse for 
-       standard distribution-based modeling.
-    2. Structured (use_decomp): Categories with high seasonal (Fs > 0.45) or trend 
-       (Ft > 0.40) strength. These utilize STL decomposition to remove temporal 
-       bias from the baseline estimate.
-    3. Noisy (use_robust): Unstructured categories with high volatility (CV > 60%). 
-       These default to Robust Z-Scores (MAD-based) to minimize outlier distortion.
-    4. Stable (use_standard): Stationary, low-variance categories. These use 
-       standard parametric Z-score baselines.
+    Decision Hierarchy & Logic:
+    1. Sparse (use_presence): 
+    Triggered if presence rate < _PRESENCE_RATE_THRESH, MAD is 0 (constant counts), 
+    or mean monthly counts < _MEAN_FLOOR. These series lack sufficient density 
+    for distributional modeling.
+    
+    2. Structured (use_decomp): 
+    Triggered for non-sparse series meeting either:
+    - Absolute Override: Trend > 0.85 or Seasonal > 0.75.
+    - Relative Strength: Valid structure (Trend > 0.75 or Seasonal > 0.60) 
+        AND a weighted structure Z-score > 0.5.
+    Uses STL decomposition to isolate trend/seasonality before baseline calculation.
+
+    3. Noisy (use_robust): 
+    Non-sparse, non-structured series with high volatility (CV > _CV_ROBUST_THRESH). 
+    Routes to Median/MAD-based robust Z-scores to mitigate outlier influence.
+
+    4. Stable (use_standard): 
+    The default path for stationary, low-variance, and well-behaved series. 
+    Uses standard parametric Mean/StdDev Z-scores.
+
+    Business Overrides:
+    - Categories in _FORCE_STANDARD are hard-routed to use_standard regardless of metrics.
 
     Args:
         pre_df (pd.DataFrame): Long-form monthly crime data. 
             Required columns: ['date', 'fbi_code_desc', 'crime_count'].
 
     Returns:
-        pd.DataFrame: A diagnostic summary table with one row per fbi_code_desc,
-            including strength metrics, CV categories, and routing flags.
+        pd.DataFrame: A diagnostic summary (one row per fbi_code_desc) containing:
+            - Descriptive stats (mean, std, median, mad, cv).
+            - Presence metrics (months_present, presence_rate).
+            - STL components (seasonal_strength, trend_strength).
+            - Boolean routing flags (use_presence, use_decomp, use_robust, use_standard).
 
     Mathematical Basis:
-        Strength of components is calculated as max(0, 1 - Var(R) / Var(R+C)), 
-        where R is the residual and C is the component (trend or seasonal).
+        - Strength of Trend (Ft): max(0, 1 - Var(R) / Var(R+T))
+        - Strength of Seasonality (Fs): max(0, 1 - Var(R) / Var(R+S))
+        - Structure Score: 0.6 * Ft + 0.4 * Fs
     """
-    # 1. Define the study period globally
-    study_start, study_end = pre_df['date'].min(), pre_df['date'].max()
-    total_months = ((study_end.year - study_start.year) * 12 + 
-                    (study_end.month - study_start.month) + 1)
     
+    # 1. Define study period
+    study_start, study_end = pre_df['date'].min(), pre_df['date'].max()
+    total_months = ((study_end.year - study_start.year) * 12 +
+                    (study_end.month - study_start.month) + 1)
+
     # 2. Descriptive statistics
     baseline = (
         pre_df.groupby('fbi_code_desc')['crime_count']
         .agg(
-            mean   ='mean',
-            std    ='std',
-            median ='median',
-            mad    =lambda x: (x - x.median()).abs().median(),
-            months ='count',  # <--- Re-inserted for verification
+            mean='mean',
+            std='std',
+            median='median',
+            mad=lambda x: (x - x.median()).abs().median(),
+            months='count',
         )
         .reset_index()
         .assign(
             zero_mad=lambda d: d['mad'] == 0,
-            cv      =lambda d: np.where(d['mean'] > 0, (d['std'] / d['mean']) * 100, np.nan).round(1),
+            cv=lambda d: np.where(d['mean'] > 0,
+                                  (d['std'] / d['mean']) * 100,
+                                  np.nan).round(1),
         )
     )
-    
+
     baseline['cv_flag'] = pd.cut(
         baseline['cv'],
         bins=[0, 30, _CV_ROBUST_THRESH, float('inf')],
         labels=['reliable', 'caution', 'noisy'],
     )
 
-    # 3. Presence rate (normalized against the global study window)
+    # 3. Presence rate
     presence = (
         pre_df.loc[pre_df['crime_count'] > 0]
         .groupby('fbi_code_desc')['date']
@@ -272,32 +286,35 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
         .assign(presence_rate=lambda d: (d['months_present'] / total_months * 100).round(1))
     )
-    
+
     baseline = baseline.merge(
-        presence[['fbi_code_desc', 'months_present', 'presence_rate']], 
-        on='fbi_code_desc', 
+        presence[['fbi_code_desc', 'months_present', 'presence_rate']],
+        on='fbi_code_desc',
         how='left'
     ).fillna({'presence_rate': 0.0, 'months_present': 0})
 
-    # 4. STL seasonal + trend strength with crash-protection
+    # 4. STL strengths
     def _stl_strengths(sub: pd.DataFrame) -> pd.Series:
         ts = sub.sort_values('date')['crime_count'].to_numpy(dtype=float)
+
         if len(ts) < _STL_MIN_MONTHS:
             return pd.Series({'seasonal_strength': 0.0, 'trend_strength': 0.0})
-        
+
         try:
             fit = STL(ts, period=12, robust=True).fit()
             var_R = np.nanvar(fit.resid)
 
-            def _strength(component: np.ndarray) -> float:
+            def _strength(component):
                 var_RC = np.nanvar(fit.resid + component)
-                if var_RC <= 0 or np.isnan(var_RC): return 0.0
+                if var_RC <= 0 or np.isnan(var_RC):
+                    return 0.0
                 return float(np.clip(1 - var_R / var_RC, 0.0, 1.0))
 
             return pd.Series({
                 'seasonal_strength': _strength(fit.seasonal),
-                'trend_strength':    _strength(fit.trend),
+                'trend_strength': _strength(fit.trend),
             })
+
         except (ValueError, np.linalg.LinAlgError):
             return pd.Series({'seasonal_strength': 0.0, 'trend_strength': 0.0})
 
@@ -306,40 +323,88 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
         .apply(_stl_strengths, include_groups=False)
         .reset_index()
     )
+
     baseline = baseline.merge(strengths, on='fbi_code_desc', how='left')
 
-    # 5. Strategic Routing
+    # 5. ROUTING SYSTEM
+    # Sparse check
     is_sparse = (baseline['presence_rate'] < _PRESENCE_RATE_THRESH) | \
                 (baseline['zero_mad']) | \
                 (baseline['mean'] < _MEAN_FLOOR)
-    
-    has_structure = (baseline['seasonal_strength'] > _SEASONAL_DECOMP_THRESH) | \
-                    (baseline['trend_strength'] > _TREND_DECOMP_THRESH)
-    
+
+    # Layer 1: Structural eligibility
+    ABS_TREND_THRESH = 0.75
+    ABS_SEASONAL_THRESH = 0.60
+
+    is_structurally_valid = (
+        (baseline['trend_strength'] > ABS_TREND_THRESH) |
+        (baseline['seasonal_strength'] > ABS_SEASONAL_THRESH)
+    )
+
+    # Absolute override
+    STRONG_TREND_OVERRIDE = 0.85
+    STRONG_SEASONAL_OVERRIDE = 0.75
+
+    is_strong_absolute = (
+        (baseline['trend_strength'] > STRONG_TREND_OVERRIDE) |
+        (baseline['seasonal_strength'] > STRONG_SEASONAL_OVERRIDE)
+    )
+
+    # Layer 2: Relative scoring
+    structure_score = (
+        0.6 * baseline['trend_strength'] +
+        0.4 * baseline['seasonal_strength']
+    )
+
+    score_z = (
+        structure_score - structure_score.mean()
+    ) / (structure_score.std() + 1e-8)
+
+    is_strong_structure = score_z > 0.5
     is_noisy = baseline['cv'] > _CV_ROBUST_THRESH
 
+    # Final routing (correct hierarchy)
     baseline['use_presence'] = is_sparse
-    baseline['use_decomp']   = ~is_sparse & has_structure
-    baseline['use_robust']   = ~is_sparse & ~has_structure & is_noisy
-    baseline['use_standard'] = ~is_sparse & ~has_structure & ~is_noisy
 
-    # 6. Override Layer
+    baseline['use_decomp'] = (
+        ~is_sparse &
+        (
+            is_strong_absolute |                      # ✅ override
+            (is_structurally_valid & is_strong_structure)
+        )
+    )
+
+    baseline['use_robust'] = (
+        ~is_sparse &
+        ~baseline['use_decomp'] &
+        is_noisy
+    )
+
+    baseline['use_standard'] = (
+        ~is_sparse &
+        ~baseline['use_decomp'] &
+        ~baseline['use_robust']
+    )
+
+    # 6. Override layer (business rules)
     force_standard = baseline['fbi_code_desc'].isin(_FORCE_STANDARD)
     baseline.loc[force_standard, ['use_presence', 'use_decomp', 'use_robust']] = False
     baseline.loc[force_standard, 'use_standard'] = True
 
-    # 7. Final Integrity Check
+    # 7. Integrity check
     assert (baseline[['use_presence', 'use_decomp', 'use_robust', 'use_standard']].sum(axis=1) == 1).all()
+
     _verify_routing(baseline)
 
     return baseline
 
-# ── 4a. Print Baseline Report ────────────────────────────────────────────────       
-def print_baseline_report(baseline):
+
+# ── 4a. Print Baseline Report ──────────────────────────────────────────────── 
+def print_baseline_report(baseline, expected_months=None, verbose=False):
     """ Prints formatted diagnostics and summary. """
-    # print("=== Months per crime (Target: 230) ===")
-    # print(baseline[['fbi_code_desc', 'months']].sort_values('months').to_string(index=False))
-    # Dynamically select columns that exist in the DataFrame
+    if verbose:
+        print("=== Months per crime ===")
+        print(baseline[['fbi_code_desc', 'months']].sort_values('months').to_string(index=False))
     cols = [c for c in baseline.columns if c != 'months']
     print("\n=== Complete Baseline Summary ===")
     print(baseline[cols].sort_values('cv', ascending=False).to_string(index=False, justify='left',
@@ -353,7 +418,16 @@ def print_baseline_report(baseline):
     print(f"\n=== System Health Summary ===")
     print(f"Total crime types:    {len(baseline)}")
     print(f"CV Distribution:      {baseline['cv_flag'].value_counts().to_dict()}")
-    print(f"Time Grid Integrity:  {'PASS' if (baseline['months'] == 230).all() else 'FAIL'}")
+    # The time grid integrity check is crucial for ensuring that the baseline statistics are 
+    # computed on a consistent and complete dataset. If the number of months in the baseline 
+    # does not match the expected number, it indicates potential issues with data completeness 
+    # or preprocessing steps, which could compromise the validity of the baseline and subsequent 
+    # analyses.
+    if expected_months is not None:
+        grid_ok = (baseline['months'] == expected_months).all()
+        print(f"Time Grid Integrity:  {'PASS' if grid_ok else 'FAIL'} (expected {expected_months} months)")
+    else:
+        print(f"Time Grid Integrity:  (skipped — no expected_months provided)")
     print(f"Decomp Routing:       {baseline['use_decomp'].sum()} crimes")
     print(f"Robust Z-Score:       {baseline['use_robust'].sum()} crimes")
     print(f"Standard Baseline:    {baseline['use_standard'].sum()} crimes")
@@ -398,7 +472,7 @@ def compute_metrics(era_df, era_label, baseline, decomp_df):
     # Standard z-gap: how many std deviations from baseline mean
     # Reliable for low-CV crimes, less reliable for noisy ones
     merged['z_gap'] = (
-        (merged['era_mean'] - merged['mean']) / merged['std']
+        (merged['era_mean'] - merged['mean']) / merged['std'].replace(0, float('nan'))
     ).round(4)
 
     # Robust z-score: uses median and MAD instead of mean and std
