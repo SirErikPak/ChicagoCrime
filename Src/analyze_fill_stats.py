@@ -4,61 +4,117 @@ from itertools import product
 from statsmodels.tsa.seasonal import STL
 import warnings
 
+
 # ── Helper Functions ────────────────────────────────────────────────
 def prepare_era_data(data, era_label):
     """Converts year_month to datetime and assigns era label."""
     data_df = data.copy()
-    data_df['date'] = pd.to_datetime(data_df['year_month'].astype(str), format='%Y%m')
+    data_df['year_month'] = pd.to_datetime(data_df['year_month'].astype(str), format='%Y%m')
     data_df['era'] = era_label
     return data_df
 
+
 # ── 1. Find Missing Crime Months ────────────────────────────────────────────────
-def find_missing_crime_months(data_df, era_label):
+def find_missing_crime_months(data_df: pd.DataFrame, era_label: str):
     """
-    Identifies gaps in the time-series grid for a specific era.
-    Returns: (expected_rows, actual_rows, missing_only_df)
+    Identifies gaps in the time-series grid for a specific era by comparing 
+    actual observations against a complete Cartesian product of dates and categories.
+
+    Args:
+        data_df (pd.DataFrame): The crime dataset. Must contain 'year_month' and 
+            'fbi_code_desc'. ('year_month' is converted to datetime internally via
+            prepare_era_data).
+        era_label (str): A descriptive label for the time period being analyzed.
+
+    Returns:
+        tuple: (expected_rows, actual_rows, missing_only_df)
+            - expected_rows (int): Theoretical count (months * categories).
+            - actual_rows (int): The current row count in the era.
+            - missing_only_df (pd.DataFrame): Rows present in the grid but not in data.
+
+    Raises:
+        ValueError: If required columns are missing from data_df.
     """
+    # 1. Input Validation
+    required_cols = {'year_month', 'fbi_code_desc'}
+    if not required_cols.issubset(data_df.columns):
+        missing = required_cols - set(data_df.columns)
+        raise ValueError(
+            f"find_missing_crime_months failed: data_df missing required columns: {missing}"
+        )
+
+    # 2. Preparation and Grid Calculation
     d = prepare_era_data(data_df, era_label)
-    
-    all_months = d['date'].unique()
+
+    all_months = d['year_month'].unique()
     all_crimes = d['fbi_code_desc'].unique()
-    
+
     expected_rows = len(all_months) * len(all_crimes)
     actual_rows = len(d)
-    
-    missing_only = pd.DataFrame()
-    
+
+    # Initialize an empty DataFrame for missing combinations
+    missing_only = pd.DataFrame(columns=['year_month', 'fbi_code_desc'])
+
+    # 3. Cartesian Product Logic
     if expected_rows > actual_rows:
         # Create the full Cartesian product grid
         full_grid = pd.DataFrame(
             list(product(all_months, all_crimes)),
-            columns=['date', 'fbi_code_desc']
+            columns=['year_month', 'fbi_code_desc']
         )
-        
-        # Identify holes in the data
+
+        # Identify holes in the data using a left join indicator
         missing_df = full_grid.merge(
-            d[['date', 'fbi_code_desc']], 
-            on=['date', 'fbi_code_desc'], 
-            how='left', 
+            d[['year_month', 'fbi_code_desc']],
+            on=['year_month', 'fbi_code_desc'],
+            how='left',
             indicator=True
         )
-        missing_only = missing_df[missing_df['_merge'] == 'left_only'].copy()
-        
+        missing_only = missing_df[missing_df['_merge'] == 'left_only'].drop(columns='_merge').copy()
+
     return expected_rows, actual_rows, missing_only
 
 
-# ── 2. Era Integrity Report ────────────────────────────────────────────────   
+# ── 2. Era Integrity Report ────────────────────────────────────────────────
 def run_era_integrity_report(era_dict, expected_counts):
     """
-    The main reporter function that orchestrates verification and printing.
+    Orchestrates the integrity verification of crime data eras and generates 
+    a diagnostic missingness report.
+
+    This function operates in two primary phases:
+    1. Temporal Gatekeeper: Validates that the number of unique months in 
+       each era matches expectations. If a mismatch is found, it raises an 
+       AssertionError to prevent downstream analysis on truncated data.
+    2. Data Density Audit: Performs a row-level comparison to identify 
+       missing crime category/month combinations and prints a formatted 
+       summary of gaps and potential duplicates.
+
+    Args:
+        era_dict (dict): Dictionary mapping era labels (str) to long-form 
+            DataFrames containing 'year_month' and 'fbi_code_desc'.
+        expected_counts (dict): Dictionary mapping era labels (str) to the 
+            total number of unique months expected (int) for that period.
+
+    Raises:
+        KeyError: If any era label in era_dict is absent from expected_counts.
+        AssertionError: If the unique month count in any era DataFrame 
+            does not match the provided expected_counts.
+
+    Output:
+        Prints a summary table to stdout, including expected vs. actual 
+        row counts and a breakdown of missing months grouped by crime category.
     """
-    # 1. First, verify all era month counts before printing the table
-    # This acts as a 'Gatekeeper' check
+    # 1. First, verify all era month counts before printing the table.
+    # This acts as a 'Gatekeeper' check — guard comes before .get() to
+    # avoid silently comparing against 0 if a label is missing.
     era_months_actual = {}
     for label, raw_df in era_dict.items():
-        actual_months = raw_df['year_month'].nunique()
-        expected_months = expected_counts.get(label, 0)
-        
+        if label not in expected_counts:
+            raise KeyError(f"run_era_integrity_report: no expected_counts entry for era '{label}'")
+
+        actual_months   = raw_df['year_month'].nunique()
+        expected_months = expected_counts[label]
+
         assert actual_months == expected_months, (
             f"Era month mismatch: '{label}' expected {expected_months} months, got {actual_months}. "
             f"Check feather file era boundary definitions."
@@ -74,13 +130,15 @@ def run_era_integrity_report(era_dict, expected_counts):
 
     for label, raw_df in era_dict.items():
         exp_rows, act_rows, missing_df = find_missing_crime_months(raw_df, label)
-        missing_count = exp_rows - act_rows
-        if missing_count < 0:
-            print(f"  WARNING: more rows than expected (possible duplicates: {abs(missing_count)} extra)")
+        # actual_missing: true gap count from the Cartesian product diff
+        # duplicate_count: rows above what the gap-adjusted total should be
+        actual_missing  = len(missing_df)
+        duplicate_count = act_rows - (exp_rows - actual_missing)
+        if duplicate_count > 0:
+            print(f"WARNING: {duplicate_count} duplicate rows detected")
 
+        print(f"{label:<15} | {exp_rows:<10} | {act_rows:<10} | {actual_missing}")
 
-        print(f"{label:<15} | {exp_rows:<10} | {act_rows:<10} | {missing_count}")
-        
         if not missing_df.empty:
             print(f" └── Missing counts by crime category:")
             gaps = missing_df.groupby('fbi_code_desc').size().sort_values(ascending=False)
@@ -88,7 +146,7 @@ def run_era_integrity_report(era_dict, expected_counts):
         print()
 
 
-# ── 3. Fill Missing Values ────────────────────────────────────────────────   
+# ── 3. Fill Missing Values ────────────────────────────────────────────────
 def fill_missing(data_df):
     """
     Fill missing crime/month combinations with zero counts.
@@ -98,60 +156,72 @@ def fill_missing(data_df):
     across all 26 crimes before baseline computation and DTW.
 
     Parameters:
-        data_df : pd.DataFrame - must contain columns: date, fbi_code_desc, crime_count, era
+        data_df : pd.DataFrame
+            Must contain columns: year_month, fbi_code_desc, crime_count, era.
+            'year_month' must already be datetime dtype — call prepare_era_data first.
 
     Returns:
         pd.DataFrame - complete grid with 0-filled missing combos
     """
     # Input validation: Required columns exist
-    required_cols = ['date', 'fbi_code_desc', 'crime_count', 'era']
+    required_cols = ['year_month', 'fbi_code_desc', 'crime_count', 'era']
     missing_cols  = [c for c in required_cols if c not in data_df.columns]
     if missing_cols:
         raise ValueError(f"fill_missing: missing required columns: {missing_cols}")
     if data_df.empty:
         raise ValueError("fill_missing: input dataframe is empty")
+    # year_month must be datetime — raw integer year_month silently builds wrong keys
+    if not pd.api.types.is_datetime64_any_dtype(data_df['year_month']):
+        raise ValueError(
+            "fill_missing: 'year_month' must be datetime dtype. Call prepare_era_data first."
+        )
 
     # Get all unique values
-    all_months = data_df['date'].unique()
+    all_months = data_df['year_month'].unique()
     all_crimes = data_df['fbi_code_desc'].unique()
-    era        = data_df['era'].iloc[0]
+    eras = data_df['era'].unique()
+    if len(eras) > 1:
+        raise ValueError(f"fill_missing: expected 1 era, found {len(eras)}: {eras}")
+    era = eras[0]
+
     # Every possible combination of month and crime type
     full_grid = pd.DataFrame(
         list(product(all_months, all_crimes)),
-        columns=['date', 'fbi_code_desc']
+        columns=['year_month', 'fbi_code_desc']
     )
-    full_grid['era'] = era  # adding the era label to every row in your full grid
-    # aligning the complete grid with the actual data and introducing missing values where data doesn’t exist
+    # Adding the era label to every row in the full grid
+    full_grid['era'] = era
+    # Align the complete grid with the actual data; missing combos introduce NaN
     filled = full_grid.merge(
-        data_df[['date', 'fbi_code_desc', 'crime_count']],
-        on=['date', 'fbi_code_desc'],
+        data_df[['year_month', 'fbi_code_desc', 'crime_count']],
+        on=['year_month', 'fbi_code_desc'],
         how='left'
     )
-    # Replaces missing values with 0
+    # Replace NaN with 0 — these are true zeros, not missing data
     filled['crime_count'] = filled['crime_count'].fillna(0).astype(int)
-    
+
     return filled
 
 
-# ── 4. Compute Baseline Statistics ────────────────────────────────────────────────   
+# ── 4. Compute Baseline Statistics ────────────────────────────────────────────────
 # Routing thresholds
-_PRESENCE_RATE_THRESH   = 30.0   # % of months with any count; below -> presence
-_MEAN_FLOOR             = 2.0    # avg monthly count; below -> presence (guards false STL structure)
-_CV_ROBUST_THRESH       = 60.0   # CV %; above -> robust only if unstructured
-_STL_MIN_MONTHS         = 24     # minimum months required to fit STL reliably
-
-# Business overrides (supersede statistical routing)
-_FORCE_STANDARD: set[str] = {
-    'Fraud',                     # trend=0.94 reflects reporting changes, not seasonality
-    'Forgery and Counterfeiting',  # stable operational baseline preferred
-}
+_PRESENCE_RATE_THRESH     = 30.0   # % of months with any count; below -> presence
+_MEAN_FLOOR               = 2.0    # avg monthly count; below -> presence (guards false STL structure)
+_CV_ROBUST_THRESH         = 60.0   # CV %; above -> robust only if unstructured
+_STL_MIN_MONTHS           = 24     # minimum months required to fit STL reliably
+# Layer 1: Structural eligibility
+_ABS_TREND_THRESH         = 0.75   # Absolute threshold for trend strength to qualify for decomposition
+_ABS_SEASONAL_THRESH      = 0.60   # Absolute threshold for seasonal strength to qualify for decomposition
+# Absolute override
+_STRONG_TREND_OVERRIDE    = 0.85   # Strong trend override — if exceeded, route to decomp regardless of other metrics
+_STRONG_SEASONAL_OVERRIDE = 0.75   # Strong seasonal override — if exceeded, route to decomp regardless of other metrics
 
 # Domain knowledge──
 # Calibrated against Chicago crime data pre-intervention period.
 # Entries reflect cases where domain expectation and STL routing agree.
 # Not independently validated — revisit if:
 #   - pre-period window changes
-#   - new crime categories are added
+#   - new crime categories are added or removed
 _KNOWN_ROUTES: dict[str, str] = {
     # Strong seasonal + trend signals confirmed by STL
     'Motor Vehicle Theft': 'decomp',
@@ -164,13 +234,16 @@ _KNOWN_ROUTES: dict[str, str] = {
     'Drug Abuse Violations': 'decomp',
     # Genuinely sparse
     'Involuntary Manslaughter / Reckless Homicide': 'presence',
-    'Human Trafficking':                            'presence',
     # Business decision: stationary baselines despite detectable trend
     # Fraud trend (0.94) reflects long-run reporting changes, not true seasonality
     # Revisit if pre-period is extended beyond the current window
     'Fraud':                      'standard',
     'Forgery and Counterfeiting': 'standard',
 }
+
+# Business overrides (supersede statistical routing).
+# Derived from _KNOWN_ROUTES — single source of truth, no manual duplication.
+_FORCE_STANDARD: set[str] = {k for k, v in _KNOWN_ROUTES.items() if v == 'standard'}
 
 
 def _verify_routing(baseline: pd.DataFrame) -> None:
@@ -183,7 +256,15 @@ def _verify_routing(baseline: pd.DataFrame) -> None:
         row = baseline.loc[baseline['fbi_code_desc'] == crime]
         if row.empty:
             continue
-        actual = row[flag_cols].idxmax(axis=1).iloc[0].replace('use_', '')
+        # Identify which routing flag is True for this crime
+        true_flags = [col for col in flag_cols if row[col].iloc[0]]
+        if not true_flags:
+            warnings.warn(f"No routing flag set for '{crime}'", UserWarning)
+            continue
+        # There should be exactly one True flag due to the integrity check
+        # in compute_baseline_stats
+        actual = true_flags[0].replace('use_', '')
+
         if actual != expected:
             warnings.warn(
                 f"Routing mismatch — '{crime}': "
@@ -232,7 +313,7 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
 
     Args:
         pre_df (pd.DataFrame): Long-form monthly crime data. 
-            Required columns: ['date', 'fbi_code_desc', 'crime_count'].
+            Required columns: ['year_month', 'fbi_code_desc', 'crime_count'].
 
     Returns:
         pd.DataFrame: A diagnostic summary (one row per fbi_code_desc) containing:
@@ -245,12 +326,28 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
         - Strength of Trend (Ft): max(0, 1 - Var(R) / Var(R+T))
         - Strength of Seasonality (Fs): max(0, 1 - Var(R) / Var(R+S))
         - Structure Score: 0.6 * Ft + 0.4 * Fs
+
+    Raises:
+        ValueError: If required columns are missing or the DataFrame is empty.
+        AssertionError: If month counts are uneven across crime categories,
+            indicating fill_missing was skipped.
     """
-    
-    # 1. Define study period
-    study_start, study_end = pre_df['date'].min(), pre_df['date'].max()
-    total_months = ((study_end.year - study_start.year) * 12 +
-                    (study_end.month - study_start.month) + 1)
+    # Input validation
+    required_cols = {'year_month', 'fbi_code_desc', 'crime_count'}
+    missing_cols = required_cols - set(pre_df.columns)
+    if missing_cols:
+        raise ValueError(f"compute_baseline_stats: missing required columns: {missing_cols}")
+    if pre_df.empty:
+        raise ValueError("compute_baseline_stats: input dataframe is empty")
+
+    # 1. Define study period — validate fill_missing was applied first
+    months_per_crime = pre_df.groupby('fbi_code_desc')['year_month'].nunique()
+    total_months = months_per_crime.max()
+
+    assert (months_per_crime == total_months).all(), (
+        f"Uneven month counts per crime — was fill_missing skipped? "
+        f"Min: {months_per_crime.min()}, Max: {months_per_crime.max()}"
+    )
 
     # 2. Descriptive statistics
     baseline = (
@@ -271,16 +368,18 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
         )
     )
 
+    # bins start at -inf so CV == 0.0 (perfectly flat series) falls in 'reliable'
+    # rather than being silently dropped as NaN
     baseline['cv_flag'] = pd.cut(
         baseline['cv'],
-        bins=[0, 30, _CV_ROBUST_THRESH, float('inf')],
+        bins=[-np.inf, 30, _CV_ROBUST_THRESH, float('inf')],
         labels=['reliable', 'caution', 'noisy'],
     )
 
     # 3. Presence rate
     presence = (
         pre_df.loc[pre_df['crime_count'] > 0]
-        .groupby('fbi_code_desc')['date']
+        .groupby('fbi_code_desc')['year_month']
         .nunique()
         .rename('months_present')
         .reset_index()
@@ -295,28 +394,32 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
 
     # 4. STL strengths
     def _stl_strengths(sub: pd.DataFrame) -> pd.Series:
-        ts = sub.sort_values('date')['crime_count'].to_numpy(dtype=float)
+        ts = sub.sort_values('year_month')['crime_count'].to_numpy(dtype=float)
 
         if len(ts) < _STL_MIN_MONTHS:
             return pd.Series({'seasonal_strength': 0.0, 'trend_strength': 0.0})
 
-        try:
-            fit = STL(ts, period=12, robust=True).fit()
-            var_R = np.nanvar(fit.resid)
+        # Catch both hard exceptions and ConvergenceWarning (unconverged IRLS fit).
+        # An unconverged fit returns inflated strength scores, misrouting crimes.
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error', category=UserWarning)
+            try:
+                fit = STL(ts, period=12, robust=True).fit()
+                var_R = np.nanvar(fit.resid)
 
-            def _strength(component):
-                var_RC = np.nanvar(fit.resid + component)
-                if var_RC <= 0 or np.isnan(var_RC):
-                    return 0.0
-                return float(np.clip(1 - var_R / var_RC, 0.0, 1.0))
+                def _strength(component):
+                    var_RC = np.nanvar(fit.resid + component)
+                    if var_RC <= 0 or np.isnan(var_RC):
+                        return 0.0
+                    return float(np.clip(1 - var_R / var_RC, 0.0, 1.0))
 
-            return pd.Series({
-                'seasonal_strength': _strength(fit.seasonal),
-                'trend_strength': _strength(fit.trend),
-            })
+                return pd.Series({
+                    'seasonal_strength': _strength(fit.seasonal),
+                    'trend_strength':    _strength(fit.trend),
+                })
 
-        except (ValueError, np.linalg.LinAlgError):
-            return pd.Series({'seasonal_strength': 0.0, 'trend_strength': 0.0})
+            except (ValueError, np.linalg.LinAlgError, UserWarning):
+                return pd.Series({'seasonal_strength': 0.0, 'trend_strength': 0.0})
 
     strengths = (
         pre_df.groupby('fbi_code_desc')
@@ -328,26 +431,20 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
 
     # 5. ROUTING SYSTEM
     # Sparse check
-    is_sparse = (baseline['presence_rate'] < _PRESENCE_RATE_THRESH) | \
-                (baseline['zero_mad']) | \
-                (baseline['mean'] < _MEAN_FLOOR)
-
-    # Layer 1: Structural eligibility
-    ABS_TREND_THRESH = 0.75
-    ABS_SEASONAL_THRESH = 0.60
-
-    is_structurally_valid = (
-        (baseline['trend_strength'] > ABS_TREND_THRESH) |
-        (baseline['seasonal_strength'] > ABS_SEASONAL_THRESH)
+    is_sparse = (
+        (baseline['presence_rate'] < _PRESENCE_RATE_THRESH) |
+        (baseline['zero_mad']) |
+        (baseline['mean'] < _MEAN_FLOOR)
     )
-
-    # Absolute override
-    STRONG_TREND_OVERRIDE = 0.85
-    STRONG_SEASONAL_OVERRIDE = 0.75
-
+    # Layer 1: Structural validity (absolute thresholds)
+    is_structurally_valid = (
+        (baseline['trend_strength'] > _ABS_TREND_THRESH) |
+        (baseline['seasonal_strength'] > _ABS_SEASONAL_THRESH)
+    )
+    # Absolute override for strong structure regardless of peer comparison
     is_strong_absolute = (
-        (baseline['trend_strength'] > STRONG_TREND_OVERRIDE) |
-        (baseline['seasonal_strength'] > STRONG_SEASONAL_OVERRIDE)
+        (baseline['trend_strength'] > _STRONG_TREND_OVERRIDE) |
+        (baseline['seasonal_strength'] > _STRONG_SEASONAL_OVERRIDE)
     )
 
     # Layer 2: Relative scoring
@@ -355,7 +452,7 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
         0.6 * baseline['trend_strength'] +
         0.4 * baseline['seasonal_strength']
     )
-
+    # Z-score normalization to identify strong structure relative to peers
     score_z = (
         structure_score - structure_score.mean()
     ) / (structure_score.std() + 1e-8)
@@ -369,17 +466,18 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
     baseline['use_decomp'] = (
         ~is_sparse &
         (
-            is_strong_absolute |                      # ✅ override
+            is_strong_absolute |                       # ✅ override
             (is_structurally_valid & is_strong_structure)
         )
     )
-
+    # Noisy but not structurally valid series get routed to robust layer,
+    # which uses the same Z-score metric but with median/MAD instead of mean/std
     baseline['use_robust'] = (
         ~is_sparse &
         ~baseline['use_decomp'] &
         is_noisy
     )
-
+    # Stable, well-behaved series get the standard parametric approach
     baseline['use_standard'] = (
         ~is_sparse &
         ~baseline['use_decomp'] &
@@ -388,8 +486,14 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
 
     # 6. Override layer (business rules)
     force_standard = baseline['fbi_code_desc'].isin(_FORCE_STANDARD)
-    baseline.loc[force_standard, ['use_presence', 'use_decomp', 'use_robust']] = False
+    # Assign column-by-column to prevent pandas from coercing bool cols to object dtype,
+    # which would silently corrupt the integrity check and _verify_routing below
+    for col in ['use_presence', 'use_decomp', 'use_robust']:
+        baseline.loc[force_standard, col] = False
     baseline.loc[force_standard, 'use_standard'] = True
+    # Re-cast all routing columns to clean bool dtype after .loc assignments
+    for col in ['use_presence', 'use_decomp', 'use_robust', 'use_standard']:
+        baseline[col] = baseline[col].astype(bool)
 
     # 7. Integrity check
     assert (baseline[['use_presence', 'use_decomp', 'use_robust', 'use_standard']].sum(axis=1) == 1).all()
@@ -399,9 +503,23 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
     return baseline
 
 
-# ── 4a. Print Baseline Report ──────────────────────────────────────────────── 
+# ── 4a. Print Baseline Report ────────────────────────────────────────────────
 def print_baseline_report(baseline, expected_months=None, verbose=False):
-    """ Prints formatted diagnostics and summary. """
+    """
+    Prints formatted diagnostics and summary.
+
+    Time Grid Integrity verifies that each crime category contains the full expected 
+    number of monthly observations in the baseline period. Any mismatch signals incomplete 
+    preprocessing, such as skipped missing-value handling or misaligned era boundaries, which 
+    can bias all downstream statistics. Ensuring a complete and consistent time grid is 
+    essential for reliable baseline estimation and valid comparisons.
+
+    Args:
+        baseline (pd.DataFrame): Output of compute_baseline_stats.
+        expected_months (int, optional): Expected month count per crime type.
+            If omitted, the grid integrity check is skipped.
+        verbose (bool): If True, prints per-crime month counts before the summary.
+    """
     if verbose:
         print("=== Months per crime ===")
         print(baseline[['fbi_code_desc', 'months']].sort_values('months').to_string(index=False))
@@ -415,19 +533,16 @@ def print_baseline_report(baseline, expected_months=None, verbose=False):
                                             'trend_strength': "{:.4f}".format,
         }))
 
-    print(f"\n=== System Health Summary ===")
+    print("\n=== System Health Summary ===")
     print(f"Total crime types:    {len(baseline)}")
     print(f"CV Distribution:      {baseline['cv_flag'].value_counts().to_dict()}")
-    # The time grid integrity check is crucial for ensuring that the baseline statistics are 
-    # computed on a consistent and complete dataset. If the number of months in the baseline 
-    # does not match the expected number, it indicates potential issues with data completeness 
-    # or preprocessing steps, which could compromise the validity of the baseline and subsequent 
-    # analyses.
+    # The expected_months check is a critical integrity gatekeeper. A mismatch suggests
+    # fill_missing was skipped or era boundaries shifted, which would bias all downstream stats
     if expected_months is not None:
         grid_ok = (baseline['months'] == expected_months).all()
         print(f"Time Grid Integrity:  {'PASS' if grid_ok else 'FAIL'} (expected {expected_months} months)")
     else:
-        print(f"Time Grid Integrity:  (skipped — no expected_months provided)")
+        print("Time Grid Integrity:  (skipped — no expected_months provided)")
     print(f"Decomp Routing:       {baseline['use_decomp'].sum()} crimes")
     print(f"Robust Z-Score:       {baseline['use_robust'].sum()} crimes")
     print(f"Standard Baseline:    {baseline['use_standard'].sum()} crimes")
@@ -435,22 +550,51 @@ def print_baseline_report(baseline, expected_months=None, verbose=False):
     print(f"Zero MAD Alerts:      {baseline['zero_mad'].sum()} crimes")
 
 
-# ── 5. Compute Metrics ────────────────────────────────────────────────   
-# For each crime, compute the appropriate metric based on cv_flag and routing flags:
-#   reliable  -> z_gap  (mean/std based)
-#   caution   -> sadj_z (seasonally adjusted z-gap using decomp residuals)
-#   noisy     -> robust_z (median/MAD based)
-#   Involuntary Manslaughter -> presence_rate only
-# All crimes also get r_spike, pct_change, and presence_rate as supplementary metrics.
-# r_spike: is a time-series metric designed to detect abnormally large changes between consecutive time points
-#
-# Note: pct_change and r_spike are mathematically identical after normalization.
-# They are assigned non-overlapping weights by routing category:
-#   r_spike    serves reliable / use_decomp / use_robust crimes  (weight = 0.75)
-#   pct_change serves use_presence crimes only                    (weight = 1.0)
-# Together they function as a single magnitude signal split across two routing paths.
-
+# ── 5. Compute Metrics ────────────────────────────────────────────────
 def compute_metrics(era_df, era_label, baseline, decomp_df):
+    """
+    Computes per-crime deviation metrics for a given era against the pre-period baseline.
+
+    Each crime is assigned its primary metric based on its routing flag:
+        use_standard  -> z_gap        : standard z-score (mean/std)
+        use_decomp    -> sadj_z       : seasonally adjusted z-gap (STL residual mean/std)
+        use_robust    -> robust_z     : robust z-score (median/MAD)
+        use_presence  -> presence_rate: magnitude of presence change vs baseline
+
+    All crimes additionally receive r_spike, pct_change, and presence_rate as
+    supplementary signals regardless of routing.
+
+    Note: pct_change and r_spike are mathematically equivalent after normalization.
+    They are assigned non-overlapping weights by routing category — r_spike serves
+    standard/decomp/robust crimes (weight=0.75), pct_change serves presence crimes
+    (weight=1.0) — functioning as a single magnitude signal split across two paths.
+
+    Args:
+        era_df (pd.DataFrame): Long-form monthly crime data for the target era.
+            Required columns: ['fbi_code_desc', 'crime_count', 'year_month'].
+        era_label (str): Label assigned to the 'era' column in the output.
+        baseline (pd.DataFrame): Output of compute_baseline_stats. Must contain
+            routing flags and descriptive stats per crime type.
+        decomp_df (pd.DataFrame): STL decomposition residual stats. Must contain
+            ['fbi_code_desc', 'resid_mean', 'resid_std'].
+
+    Returns:
+        pd.DataFrame: One row per crime type with all computed metrics and the
+            era label attached.
+
+    Raises:
+        ValueError: If required columns are missing from era_df or decomp_df.
+    """
+    # Input validation
+    required_era_cols = {'fbi_code_desc', 'crime_count', 'year_month'}
+    missing_era_cols = required_era_cols - set(era_df.columns)
+    if missing_era_cols:
+        raise ValueError(f"compute_metrics: era_df missing required columns: {missing_era_cols}")
+
+    required_decomp_cols = {'fbi_code_desc', 'resid_mean', 'resid_std'}
+    missing_decomp_cols = required_decomp_cols - set(decomp_df.columns)
+    if missing_decomp_cols:
+        raise ValueError(f"compute_metrics: decomp_df missing required columns: {missing_decomp_cols}")
 
     # Per-crime summary stats for this era
     era_stats = (
@@ -476,7 +620,7 @@ def compute_metrics(era_df, era_label, baseline, decomp_df):
     ).round(4)
 
     # Robust z-score: uses median and MAD instead of mean and std
-    # More resistant to outliers - used for noisy crimes with non-zero MAD
+    # More resistant to outliers — used for noisy crimes with non-zero MAD
     # 1.4826 rescales MAD to be comparable to std under a normal distribution
     merged['robust_z'] = (
         (merged['era_median'] - merged['median']) /
@@ -485,24 +629,21 @@ def compute_metrics(era_df, era_label, baseline, decomp_df):
 
     # R-spike: ratio of era average to baseline average
     # 1.0 = no change, 1.5 = 50% increase, 0.7 = 30% decrease
-    merged['r_spike'] = (merged['era_mean'] / merged['mean']).round(4)
-
-    # Pct change: more interpretable version of r_spike
-    # Easier to communicate: "+40% during COVID" vs "r_spike = 1.4"
-    merged['pct_change'] = (
-        (merged['era_mean'] - merged['mean']) / merged['mean'] * 100
-    ).round(2)
+    safe_mean = merged['mean'].replace(0, float('nan'))
+    merged['r_spike']    = (merged['era_mean'] / safe_mean).round(4)
+    # Pct change: percentage increase/decrease from baseline mean
+    merged['pct_change'] = ((merged['era_mean'] - safe_mean) / safe_mean * 100).round(2)
 
     # Presence rate: % of era months where at least one incident occurred
     # Primary metric for Involuntary Manslaughter (median=0, MAD=0)
     # Supplementary for all other crimes
-    total_months = era_df['date'].nunique()
+    total_months = era_df['year_month'].nunique()
     presence = (
         era_df[era_df['crime_count'] > 0]
-        .groupby('fbi_code_desc')['date']
+        .groupby('fbi_code_desc')['year_month']
         .nunique()
         .reset_index()
-        .rename(columns={'date': 'months_present'})
+        .rename(columns={'year_month': 'months_present'})
     )
     presence['presence_rate'] = (
         presence['months_present'] / total_months * 100
@@ -514,12 +655,11 @@ def compute_metrics(era_df, era_label, baseline, decomp_df):
     )
     merged['presence_rate'] = merged['presence_rate'].fillna(0)
 
-    # Seasonally adjusted z-gap: uses decomp residual mean and std as reference
-    # Removes seasonal variance before measuring COVID deviation
-    # Only computed for caution crimes + Liquor Laws (use_decomp == True)
-    # For all others, sadj_z is NaN
+    # Seasonally adjusted z-gap: uses decomp residual mean and std as reference.
+    # Removes seasonal variance before measuring COVID deviation.
+    # Only computed for crimes where use_decomp == True; sadj_z is NaN for all others.
     #
-    # Implementation: vectorized merge replaces the iterrows anti-pattern
+    # Implementation: vectorized merge replaces the iterrows anti-pattern.
     # iterrows() disables vectorization and is O(n) Python loop overhead.
     # Reference: https://pandas.pydata.org/docs/user_guide/enhancingperf.html
     decomp_lookup = decomp_df[['fbi_code_desc', 'resid_mean', 'resid_std']].copy()
