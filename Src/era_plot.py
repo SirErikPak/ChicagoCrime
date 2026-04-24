@@ -67,264 +67,260 @@ def plot_crime_history(crime_name, baseline_df, era_data_filled):
 
 
 # ── 2. Seasonal Amplitude Plot ────────────────────────────────────────────────
-def plot_seasonal_amplitude(data_df, available_crimes, n_months=60, ncols=3, palette_name="viridis"):
+def plot_seasonal_amplitude(
+    data_df: pd.DataFrame,
+    available_crimes: list[str],
+    n_months: int = 60,
+    ncols: int = 3,
+    palette_name: str = 'viridis',
+) -> None:
     """
-    Plots a grid of time series subplots to visualize seasonal amplitude and 
-    variance regimes across different crime categories.
-    
-    Parameters:
-    -----------
-    data_df : pandas.DataFrame
-        The source dataframe containing 'fbi_code_desc' and 'crime_count' columns.
-    available_crimes : list
-        List of strings identifying the crimes to be extracted and plotted.
-    n_months : int, default 60
-        The maximum number of data points (months) to display per plot.
-    ncols : int, default 3
-        Number of columns in the resulting Matplotlib figure grid.
-    palette_name : str, default "viridis"
-        The Seaborn color palette used to differentiate the subplots.
-        
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-        The generated figure object.
-    axes : numpy.ndarray
-        Array of the specific axes objects used in the plot.
-    """
-    # 1. Setup Theme and Data Extraction
-    sns.set_theme(style="whitegrid", context="talk")
+    Grid of time-series subplots showing seasonal amplitude and variance
+    regimes across crime categories.
 
-    # Extract time series into a dictionary, filtering for minimum data requirements (>12 months)
+    Parameters
+    ----------
+    data_df         : Long-form DataFrame with columns fbi_code_desc, crime_count.
+    available_crimes: Crime categories to plot.
+    n_months        : Maximum months displayed per panel (default 60).
+    ncols           : Grid columns (default 3).
+    palette_name    : Seaborn palette for panel colors (default 'viridis').
+    """
+    # 1. Extract series
     data_dict = {
         crime: data_df.loc[data_df['fbi_code_desc'] == crime, 'crime_count'].values
         for crime in available_crimes
-        if len(data_df.loc[data_df['fbi_code_desc'] == crime, 'crime_count'].values) > 12
+        if (data_df['fbi_code_desc'] == crime).sum() > 12
     }
 
-    n = len(data_dict)
-    if n == 0:
-        print("No data available to plot (all series < 12 months or list empty).")
-        return None, None
-        
-    # Calculate grid dimensions based on the number of crimes
-    nrows = int(np.ceil(n / ncols))
+    if not data_dict:
+        raise ValueError("No series with more than 12 months found in available_crimes.")
+
+    # 2. Grid geometry
+    n       = len(data_dict)
+    nrows   = int(np.ceil(n / ncols))
     palette = sns.color_palette(palette_name, n_colors=n)
-    
-    fig, axes = plt.subplots(nrows, ncols, figsize=(22, 5 * nrows))
-    
-    # Flatten axes for easy iteration; handle edge case where subplots() returns a single Ax object
-    if n == 1:
-        axes = np.array([axes])
+
+    sns.set_theme(style='whitegrid', context='talk')
+    fig, axes = plt.subplots(nrows, ncols, figsize=(22, 5 * nrows), squeeze=False)
     axes = axes.flatten()
 
-    # 2. Iterate and Plot
+    # 3. Plot panels
     for i, (label, series) in enumerate(data_dict.items()):
-        ax = axes[i]
-        
-        # Determine the window of data to show (capped by n_months)
-        actual_slice = min(len(series), n_months)
-        data_to_plot = series[:actual_slice]
-        x = np.arange(len(data_to_plot))
-        
-        # Primary trend line
-        sns.lineplot(x=x, y=data_to_plot, ax=ax, color=palette[i], linewidth=2.5, zorder=3)
-        
-        # Shaded area to emphasize the "amplitude" or volume of the series
+        ax           = axes[i]
+        data_to_plot = series[:n_months]
+        x            = np.arange(len(data_to_plot))
+
+        sns.lineplot(x=x, y=data_to_plot, ax=ax,
+                     color=palette[i], linewidth=2.5, zorder=3)
         ax.fill_between(x, data_to_plot, alpha=0.15, color=palette[i])
-        
-        # Horizontal reference line representing the mean of the shown period
-        avg = np.mean(data_to_plot)
-        ax.axhline(avg, color='black', linestyle='--', linewidth=1, alpha=0.4, label='Mean')
-        
-        # Titles and labels (truncated title to prevent overlap)
-        ax.set_title(f'Regime: {label[:25]}', fontsize=16, fontweight='bold', pad=15)
-        ax.set_xlabel("Months", fontsize=12)
-        ax.set_ylabel("Monthly Count", fontsize=12)
-        
-        # Aesthetic cleanup: remove outer box/spines and soften the grid
+        ax.axhline(data_to_plot.mean(), color='black', ls='--',
+                   lw=1, alpha=0.4, label='Mean')
+
+        ax.set(title=label[:30], xlabel='Months', ylabel='Monthly Count')
+        ax.title.set_fontweight('bold')
+        ax.legend(frameon=False, fontsize=10)
+        ax.yaxis.grid(True, alpha=0.3)
+        ax.xaxis.grid(False)
         sns.despine(ax=ax, left=True)
-        ax.grid(True, axis='y', alpha=0.3)
 
-    # 3. Handle empty subplots (if n is not a perfect multiple of ncols)
-    for j in range(i + 1, len(axes)):
-        axes[j].set_visible(False)
+    # 4. Hide unused panels
+    for ax in axes[n:]:
+        ax.set_visible(False)
 
-    # 4. Final Polish and Title
-    plt.suptitle(f'Diagnostic: Seasonal Amplitude Test\n(Visualizing variance regimes for n={n} candidates)', 
-                 fontsize=20, y=1.02, fontweight='bold')
-    
-    # Remove horizontal grid lines only
-    for ax in axes:
-        ax.yaxis.grid(False)
+    # 5. Figure title
+    fig.suptitle(
+        f'Seasonal Amplitude Diagnostic  -  {n} crime categories',
+        fontsize=20, fontweight='bold', y=1.02,
+    )
+
     plt.tight_layout()
-    plt.show()
 
 
 # ── 3. Global Mean-Variance Plot ────────────────────────────────────────
-def plot_global_mean_variance(df, n_labels=5):
+def plot_global_mean_variance(df, figsize: tuple = (12, 6), n_labels: int = 5) -> None:
     """
-    Visualizes the mean-variance relationship for all crime categories to detect 
-    overdispersion and heteroscedasticity.
+    Visualizes the mean-variance relationship across all crime categories to diagnose 
+    dispersion regimes and statistical distribution suitability.
 
-    Parameters:
-    -----------
-    df : pandas.DataFrame
-        Tidy dataframe containing 'fbi_code_desc' and 'crime_count' columns.
-    n_labels : int, default 5
-        Number of highly overdispersed crimes to highlight with labels.
+    This diagnostic plot helps determine if crime series follow a Poisson distribution 
+    (where Variance ≈ Mean) or exhibit overdispersion (Variance > Mean). High 
+    overdispersion suggests the need for Negative Binomial models or log-transformations 
+    prior to time-series decomposition.
+
+    Args:
+        df (pd.DataFrame): Long-form dataframe containing at least 'fbi_code_desc' 
+            and 'crime_count' columns.
+        figsize (tuple, optional): Dimensions of the resulting figure. Defaults to (12, 6).
+        n_labels (int, optional): Number of extreme outliers (most and least dispersed) 
+            to label on the plot. Defaults to 5.
 
     Returns:
-    --------
-    None (Displays a Matplotlib figure)
+        None: Displays a Matplotlib figure.
     """
-    # 1. Statistical Aggregation
-    # Group by crime type to find the total mean and variance across the time series
+    # 1. Aggregate
     global_stats = (
         df.groupby('fbi_code_desc')['crime_count']
         .agg(['mean', 'var'])
         .reset_index()
+        .query('mean > 0')
+        .assign(dispersion=lambda d: d['var'] / d['mean'])
     )
 
-    sns.set_theme(style="whitegrid")
-    fig, ax = plt.subplots(figsize=(12, 8))
+    # 2. Figure
+    sns.set_theme(style='whitegrid')
+    fig, ax = plt.subplots(figsize=figsize)
 
-    # 2. Dispersion Analysis
-    # Dispersion ratio (V/M) > 1 indicates overdispersion (common in crime data)
-    global_stats['dispersion'] = global_stats['var'] / global_stats['mean']
-    
-    # Use log10 dispersion for the color mapping to handle large ranges gracefully
-    scatter = ax.scatter(
+    sc = ax.scatter(
         global_stats['mean'], global_stats['var'],
         c=np.log10(global_stats['dispersion']),
-        cmap='RdYlGn_r', s=100, alpha=0.8, edgecolors='grey', linewidths=0.5,
-        zorder=3
+        cmap='RdYlGn_r', s=100, alpha=0.85,
+        edgecolors='grey', linewidths=0.5, zorder=3
     )
-    
-    # Add colorbar with LaTeX-rendered label to avoid font warnings
-    cbar = plt.colorbar(scatter, ax=ax)
-    cbar.set_label(r'$\log_{10}(\mathrm{Dispersion\ Ratio:}\ Var/Mean)$', fontsize=11)
+    cbar = fig.colorbar(sc, ax=ax)
+    cbar.set_label(r'$\log_{10}(\mathrm{Var\,/\,Mean})$', fontsize=11)
 
-    # 3. Baseline Guidelines
-    # Generating log-spaced range for smooth lines on a log-scale plot
+    # 3. Reference lines
     x_range = np.logspace(
-        np.log10(global_stats['mean'].min() * 0.8),
-        np.log10(global_stats['mean'].max() * 1.2),
-        200
+        np.log10(global_stats['mean'].min() * 0.5),
+        np.log10(global_stats['mean'].max() * 2.0),
+        300
     )
+    for y, ls, color, label in [
+        (x_range,        '--', 'steelblue', 'Poisson (V = M)'),
+        (10  * x_range,  ':',  'tomato',    'NB (V = 10M)'),
+        (100 * x_range,  '-.', 'firebrick', 'NB (V = 100M)'),
+    ]:
+        ax.plot(x_range, y, ls=ls, color=color, lw=1.5, alpha=0.7, label=label)
+
+    # 4. Axes and Title
+    ax.set(xscale='log', yscale='log',
+           xlabel='Mean Monthly Count (log scale)',
+           ylabel='Variance (log scale)')
+    ax.set_title('Global Mean–Variance Landscape', fontsize=16,
+                 fontweight='bold', pad=30)
+
+    # 5. Labels (collision-safe)
+    top = global_stats.nlargest(n_labels, 'dispersion')
+    low = global_stats.nsmallest(n_labels, 'dispersion')
     
-    # Poisson Baseline: Variance = Mean
-    ax.plot(x_range, x_range, color='steelblue', ls='--', lw=1.5, alpha=0.7, label='Poisson (V = M)')
-    # Negative Binomial (NB) Guidelines: visualizing 10x and 100x overdispersion
-    ax.plot(x_range, 10 * x_range, color='tomato', ls=':', lw=1.5, alpha=0.7, label='NB guideline (V = 10M)')
-    ax.plot(x_range, 100 * x_range, color='firebrick', ls='-.', lw=1.5, alpha=0.7, label='NB guideline (V = 100M)')
+    # ── lobal Mean-Variance Plot Labels ────────────────────────────────
+    def _place_labels(subset, side):
+        """
+        Convert each point to display (pixel) space, spread labels evenly
+        along the y-pixel axis, then convert anchor positions back to data
+        space for annotate(). This makes spacing uniform regardless of scale.
+        """
+        # Transform data coords → display (pixel) coords
+        pts = ax.transData.transform(
+            [(r['mean'], r['var']) for _, r in subset.iterrows()]
+        )   # shape (n, 2) in pixels
 
-    # 4. Axis Scaling & Titles
-    ax.set_xscale('log')
-    ax.set_yscale('log')
-    ax.set_title("Global Mean–Variance Landscape (All Crimes)", fontsize=16, fontweight='bold', pad=50)
-    ax.set_xlabel("Mean Monthly Count (log scale)", fontsize=12)
-    ax.set_ylabel("Variance (log scale)", fontsize=12)
-    ax.legend(fontsize=10)
+        # Sort by pixel-y so linspace offsets run bottom-to-top consistently
+        order   = np.argsort(pts[:, 1])
+        pts     = pts[order]
+        rows    = [subset.iloc[i] for i in order]
 
-    # 5. Dynamic Staggered Labeling
-    # Identify the top N crimes where variance is highest relative to the mean
-    top_var = global_stats.nlargest(n_labels, 'dispersion')
+        # Spread label anchors over a fixed pixel band centered on the cluster
+        y_min, y_max = pts[:, 1].min(), pts[:, 1].max()
+        padding  = 40                                    # px above/below outermost point
+        y_spread = np.linspace(y_min - padding, y_max + padding, len(rows))
+        x_offset = -90 if side == 'left' else 90        # px left/right of point
 
-    # Sort candidates by variance to prevent arrow-crossing in the vertical stack
-    top_var = top_var.sort_values('var', ascending=True).reset_index(drop=True)
-
-    # offset text 60 pixels to the left of the data points
-    x_offset = -60  
-    # Create evenly spaced vertical offsets so labels don't overlap each other
-    y_offsets = np.linspace(-40, 40, n_labels)
-
-    for i, row in top_var.iterrows():
-        oy = y_offsets[i]
-        ax.annotate(
-            row['fbi_code_desc'],
-            xy=(row['mean'], row['var']),      # Target coordinates (data space)
-            xytext=(x_offset, oy),             # Label coordinates (pixel offset space)
-            textcoords='offset points',
-            fontsize=9,
-            ha='right',                        # Anchor text at the end of the arrow
-            arrowprops=dict(
-                arrowstyle='->',
-                color='gray',
-                lw=0.8,
-                shrinkA=4,                     # Distance from label
-                shrinkB=4                      # Distance from data point
+        for (px, py), y_label, row in zip(pts, y_spread, rows):
+            # Label anchor in display space → back to data space
+            lx, ly = ax.transData.inverted().transform(
+                (px + x_offset, y_label)
             )
-        )
+            ax.annotate(
+                row['fbi_code_desc'],
+                xy=(row['mean'], row['var']),
+                xytext=(lx, ly),
+                xycoords='data', textcoords='data',
+                fontsize=9, ha='right' if side == 'left' else 'left',
+                va='center',
+                arrowprops=dict(arrowstyle='->', color='dimgray',
+                                lw=0.8, shrinkB=4),
+            )
 
-    # 6. Final Polish
+    _place_labels(top, 'left')
+    _place_labels(low, 'right')
+
+    ax.legend(loc='upper left', framealpha=0.9)
     sns.despine()
     plt.tight_layout()
-    plt.show()
 
 
-# ── 4. Mean-Variance Analysis ────────────────────────────────────────
-def plot_mean_variance_analysis(data, crime_type, window=12, log_scale=False):
+# ── 4. Mean-Variance Analysis Plot ────────────────────────────────────────
+def plot_mean_variance_analysis(
+    data: pd.DataFrame,
+    crime_type: str,
+    window: int = 12,
+    figsize: tuple = (22, 6)
+) -> None:
     """
-    Performs a rolling mean-variance diagnostic on a specific crime category 
-    to identify heteroscedasticity and overdispersion.
+    Rolling mean-variance diagnostic for a single crime category.
 
-    Parameters:
-    -----------
-    data : pandas.DataFrame
-        Long-form dataframe containing 'date', 'fbi_code_desc', and 'crime_count'.
-    crime_type : str
-        The specific fbi_code_desc to filter and analyze.
-    window : int, default 12
-        The size of the rolling window (in months) for calculating statistics.
-    log_scale : bool, default False
-        If True, applies a log-log transformation to the axes. Helpful for
-        high-volume crimes or exponential mean-variance relationships.
+    Renders two side-by-side panels — linear and log-log — so scale-dependent
+    patterns (e.g. exponential mean-variance growth) are immediately visible
+    without re-running the function.
+
+    Points well above the Poisson baseline (V = M) indicate overdispersion,
+    suggesting a negative-binomial or zero-inflated model may be appropriate.
+
+    Parameters
+    ----------
+    data       : Long-form DataFrame with columns: date, fbi_code_desc, crime_count.
+    crime_type : Value of fbi_code_desc to analyse.
+    window     : Rolling window size in months (default 12).
     """
-    # 1. Filter and Calculate Rolling Statistics
-    # We set the index to date to ensure temporal ordering, though the
-    # rolling operation primarily relies on the row sequence.
-    series = data[data['fbi_code_desc'] == crime_type].set_index('date')['crime_count']
-    
-    stats = pd.DataFrame({
-        'Rolling Mean': series.rolling(window).mean(),
-        'Rolling Var': series.rolling(window).var()
-    }).dropna() # Remove the initial 'window-1' rows where stats are NaN
-
-    # 2. Setup Plot Theme
-    sns.set_theme(style="whitegrid", context="notebook")
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    # 3. Create Scatter with Regression Trend
-    # regplot visualizes the relationship; if the line is steep, the series
-    # likely requires a multiplicative decomposition or log-transform.
-    sns.regplot(
-        data=stats, x='Rolling Mean', y='Rolling Var',
-        scatter_kws={'alpha': 0.5, 's': 60, 'color': '#2a9d8f'},
-        line_kws={'color': '#e76f51', 'label': 'Trend (Mean-Var)'},
-        ax=ax
+    # 1. Rolling stats
+    series = (
+        data.loc[data['fbi_code_desc'] == crime_type]
+        .set_index('date')['crime_count']
+    )
+    stats = (
+        pd.DataFrame({
+            'Rolling Mean': series.rolling(window).mean(),
+            'Rolling Var':  series.rolling(window).var(),
+        })
+        .dropna()
     )
 
-    # 4. Identity Line (Poisson Baseline: Var = Mean)
-    # This acts as a 'Goldilocks' line. Dots significantly above this line 
-    # indicate 'Overdispersion', common in aggregated crime data.
-    if not stats.empty:
-        combined_max = max(stats['Rolling Mean'].max(), stats['Rolling Var'].max())
-        ax.plot([0, combined_max], [0, combined_max], 
-                color='black', linestyle=':', alpha=0.6, label='Poisson Baseline (V=M)')
+    if stats.empty:
+        raise ValueError(f"No data after rolling window for crime_type={crime_type!r}.")
 
-    # 5. Scaling and Titles
-    if log_scale:
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        ax.set_title(f"Log-Log Mean vs Variance: {crime_type}", fontweight='bold', pad=15)
-    else:
-        ax.set_title(f"Mean vs Variance: {crime_type}", fontweight='bold', pad=15)
+    # 2. Figure — two panels sharing the same data but different scales 
+    sns.set_theme(style='whitegrid', context='notebook')
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+    fig.suptitle(f'Mean vs Variance: {crime_type}', fontsize=14, fontweight='bold', y=1.02)
 
-    # 6. Final Polish
-    ax.set_xlabel("Rolling Mean (Window=12)", fontsize=11)
-    ax.set_ylabel("Rolling Variance (Window=12)", fontsize=11)
-    ax.legend(frameon=True)
+    combined_max = max(stats['Rolling Mean'].max(), stats['Rolling Var'].max())
+
+    panels = [
+        (axes[0], 'linear', 'linear', 'Linear'),
+        (axes[1], 'log',    'log',    'Log-Log'),
+    ]
+
+    for ax, xscale, yscale, scale_label in panels:
+        # Scatter + OLS trend
+        sns.regplot(
+            data=stats, x='Rolling Mean', y='Rolling Var', ax=ax,
+            scatter_kws={'alpha': 0.5, 's': 60, 'color': '#2a9d8f'},
+            line_kws={'color': '#e76f51', 'label': f'OLS trend (window={window})'},
+        )
+        # Poisson baseline
+        ax.plot(
+            [0, combined_max], [0, combined_max],
+            color='black', ls=':', lw=1.2, alpha=0.6, label='Poisson baseline (V = M)',
+        )
+        ax.set(
+            xscale=xscale, yscale=yscale,
+            title=f'{scale_label} Scale',
+            xlabel=f'Rolling Mean (window={window})',
+            ylabel=f'Rolling Variance (window={window})',
+        )
+        ax.legend(frameon=True)
+
     sns.despine()
     plt.tight_layout()
-    plt.show()
