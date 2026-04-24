@@ -7,7 +7,23 @@ import warnings
 
 # ── Helper Functions ────────────────────────────────────────────────
 def prepare_era_data(data, era_label):
-    """Converts year_month to datetime and assigns era label."""
+    """
+    Converts year_month to datetime and assigns era label.
+
+    Args:
+        data (pd.DataFrame): Must contain 'year_month' as an integer (YYYYMM format).
+        era_label (str): Label to assign to the 'era' column.
+
+    Returns:
+        pd.DataFrame: Copy of input with 'year_month' as datetime and 'era' set.
+
+    Raises:
+        ValueError: If 'year_month' column is missing from data.
+    """
+    # FIX #4: input validation added — missing column previously raised bare KeyError
+    if 'year_month' not in data.columns:
+        raise ValueError("prepare_era_data: input data missing required column 'year_month'")
+
     data_df = data.copy()
     data_df['year_month'] = pd.to_datetime(data_df['year_month'].astype(str), format='%Y%m')
     data_df['era'] = era_label
@@ -105,8 +121,8 @@ def run_era_integrity_report(era_dict, expected_counts):
         row counts and a breakdown of missing months grouped by crime category.
     """
     # 1. First, verify all era month counts before printing the table.
-    # This acts as a 'Gatekeeper' check — guard comes before .get() to
-    # avoid silently comparing against 0 if a label is missing.
+    # Guard comes before dict access to avoid silently comparing against 0
+    # if a label is missing.
     era_months_actual = {}
     for label, raw_df in era_dict.items():
         if label not in expected_counts:
@@ -140,7 +156,7 @@ def run_era_integrity_report(era_dict, expected_counts):
         print(f"{label:<15} | {exp_rows:<10} | {act_rows:<10} | {actual_missing}")
 
         if not missing_df.empty:
-            print(f" └── Missing counts by crime category:")
+            print(" └── Missing counts by crime category:")
             gaps = missing_df.groupby('fbi_code_desc').size().sort_values(ascending=False)
             print(gaps.to_string())
         print()
@@ -350,6 +366,8 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # 2. Descriptive statistics
+    # FIX #1: zero_mad explicitly cast to bool at assignment to prevent object dtype
+    # if upstream merge/fillna produces mixed dtype for 'mad'
     baseline = (
         pre_df.groupby('fbi_code_desc')['crime_count']
         .agg(
@@ -361,7 +379,7 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
         )
         .reset_index()
         .assign(
-            zero_mad=lambda d: d['mad'] == 0,
+            zero_mad=lambda d: (d['mad'] == 0).astype(bool),
             cv=lambda d: np.where(d['mean'] > 0,
                                   (d['std'] / d['mean']) * 100,
                                   np.nan).round(1),
@@ -399,10 +417,12 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
         if len(ts) < _STL_MIN_MONTHS:
             return pd.Series({'seasonal_strength': 0.0, 'trend_strength': 0.0})
 
-        # Catch both hard exceptions and ConvergenceWarning (unconverged IRLS fit).
-        # An unconverged fit returns inflated strength scores, misrouting crimes.
+        # FIX #2: narrowed ConvergenceWarning filter to message pattern so that
+        # unrelated UserWarnings from numpy/pandas/statsmodels don't silently fall
+        # back to 0.0 strengths and misroute the crime. Previously caught all
+        # UserWarning broadly with category=UserWarning alone.
         with warnings.catch_warnings():
-            warnings.filterwarnings('error', category=UserWarning)
+            warnings.filterwarnings('error', message='.*[Cc]onverg.*', category=UserWarning)
             try:
                 fit = STL(ts, period=12, robust=True).fit()
                 var_R = np.nanvar(fit.resid)
@@ -583,14 +603,25 @@ def compute_metrics(era_df, era_label, baseline, decomp_df):
             era label attached.
 
     Raises:
-        ValueError: If required columns are missing from era_df or decomp_df.
+        ValueError: If required columns are missing from era_df, baseline, or decomp_df.
     """
-    # Input validation
+    # Input validation — era_df
     required_era_cols = {'fbi_code_desc', 'crime_count', 'year_month'}
     missing_era_cols = required_era_cols - set(era_df.columns)
     if missing_era_cols:
         raise ValueError(f"compute_metrics: era_df missing required columns: {missing_era_cols}")
 
+    # FIX #3: baseline validation added — previously unchecked, raised confusing
+    # KeyError deep inside the merge chain if any column was absent
+    required_baseline_cols = {
+        'fbi_code_desc', 'mean', 'std', 'median', 'mad',
+        'cv', 'cv_flag', 'zero_mad', 'use_decomp', 'use_robust', 'use_presence'
+    }
+    missing_baseline_cols = required_baseline_cols - set(baseline.columns)
+    if missing_baseline_cols:
+        raise ValueError(f"compute_metrics: baseline missing required columns: {missing_baseline_cols}")
+
+    # Input validation — decomp_df
     required_decomp_cols = {'fbi_code_desc', 'resid_mean', 'resid_std'}
     missing_decomp_cols = required_decomp_cols - set(decomp_df.columns)
     if missing_decomp_cols:
