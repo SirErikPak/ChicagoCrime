@@ -13,6 +13,7 @@ Src/*old*
 # Jupyter Notebooks
 .ipynb_checkpoints/
 Notebook/Untitled*
+Notebook/*Learn*
 SQL/Untitled*
 
 # Environments and Secrets
