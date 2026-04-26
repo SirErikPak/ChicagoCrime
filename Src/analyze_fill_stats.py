@@ -356,7 +356,7 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
     if pre_df.empty:
         raise ValueError("compute_baseline_stats: input dataframe is empty")
 
-    # 1. Define study period — validate fill_missing was applied first
+    # 1. Define study period - validate fill_missing was applied first
     months_per_crime = pre_df.groupby('fbi_code_desc')['year_month'].nunique()
     total_months = months_per_crime.max()
 
@@ -366,7 +366,7 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # 2. Descriptive statistics
-    # FIX #1: zero_mad explicitly cast to bool at assignment to prevent object dtype
+    # zero_mad explicitly cast to bool at assignment to prevent object dtype
     # if upstream merge/fillna produces mixed dtype for 'mad'
     baseline = (
         pre_df.groupby('fbi_code_desc')['crime_count']
@@ -417,7 +417,7 @@ def compute_baseline_stats(pre_df: pd.DataFrame) -> pd.DataFrame:
         if len(ts) < _STL_MIN_MONTHS:
             return pd.Series({'seasonal_strength': 0.0, 'trend_strength': 0.0})
 
-        # FIX #2: narrowed ConvergenceWarning filter to message pattern so that
+        # Narrowed ConvergenceWarning filter to message pattern so that
         # unrelated UserWarnings from numpy/pandas/statsmodels don't silently fall
         # back to 0.0 strengths and misroute the crime. Previously caught all
         # UserWarning broadly with category=UserWarning alone.
