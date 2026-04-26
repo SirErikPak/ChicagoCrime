@@ -12,6 +12,10 @@ Src/*old*
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
+# VS Code settings and workspace files
+.vscode/
+
+# Addtional Notebook files to ignore
 Notebook/Untitled*
 Notebook/*Learn*
 SQL/Untitled*
