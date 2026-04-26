@@ -13,6 +13,7 @@ Backup/
 .ipynb_checkpoints/
 Notebook/Untitled*
 SQL/Untitled*
+Src/*old*
 
 # Optional: ignore all generated plots/images
 
