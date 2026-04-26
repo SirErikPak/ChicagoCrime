@@ -12,10 +12,10 @@ Backup/
 # Jupyter Notebooks
 .ipynb_checkpoints/
 Notebook/Untitled*
+SQL/Untitled*
 
 # Optional: ignore all generated plots/images
-*.png
-!Image/scatter_crime_plot.png
+
 
 # Environments and Secrets
 .venv/
