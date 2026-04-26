@@ -7,18 +7,12 @@ __pycache__/
 Data/
 Backup/
 .DS_Store
-Notebook/*Copy*
-Src/*old*
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
-# VS Code settings and workspace files
-.vscode/
-
-# Addtional Notebook files to ignore
 Notebook/Untitled*
-Notebook/*Learn*
-SQL/Untitled*
+
+# Optional: ignore all generated plots/images
 
 # Environments and Secrets
 .venv/
