@@ -8,15 +8,15 @@ Data/
 Backup/
 .DS_Store
 .vscode
+.Rhistory
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
-Notebook/Untitled*
-SQL/Untitled*
-Src/*old*
 
-# Optional: ignore all generated plots/images
-
+# Old & Untitle files
+*old*
+Untitled*
+*Copy*
 
 # Environments and Secrets
 .venv/
