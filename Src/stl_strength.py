@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import warnings
 from statsmodels.tsa.seasonal import STL
-import config
+import config_time_series
 
 
 # STL Decomposition Strengths: Quantifies Trend and Seasonality vs Residual Noise
@@ -11,7 +11,7 @@ def _stl_strengths(crime_df: pd.DataFrame) -> pd.Series:
     ts = crime_df.sort_values('year_month')['crime_count'].to_numpy(dtype=float)
 
     # STL requires sufficient length (>= 2 seasonal periods) and non-trivial variance
-    if len(ts) < config.CONFIG["_STL_MIN_MONTHS"] or np.nanvar(ts) < 1e-8:
+    if len(ts) < config_time_series.CONFIG["_STL_MIN_MONTHS"] or np.nanvar(ts) < 1e-8:
         return pd.Series({
             'seasonal_strength': 0.0,
             'trend_strength':    0.0,
@@ -27,7 +27,7 @@ def _stl_strengths(crime_df: pd.DataFrame) -> pd.Series:
     try:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            fit = STL(ts, period=config.CONFIG["_STL_SEASONAL_PERIOD"], robust=True).fit()
+            fit = STL(ts, period=config_time_series.CONFIG["_STL_SEASONAL_PERIOD"], robust=True).fit()
 
         if np.all(np.isnan(fit.resid)):
             raise ValueError("STL produced all-NaN residuals.")

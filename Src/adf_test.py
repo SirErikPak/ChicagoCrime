@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import warnings
 from statsmodels.tsa.stattools import adfuller
-import config
+import config_time_series
 
 
 #  ADF (Augmented Dickey-Fuller) Eligibility Helper Function
@@ -28,32 +28,32 @@ def _is_adf_eligible(row) -> bool:
     """
 
     # Gate 1: Structural — Duration
-    if row["months"] < config.CONFIG["_ELIGIBILITY_MIN_MONTHS"]:
+    if row["months"] < config_time_series.CONFIG["_ELIGIBILITY_MIN_MONTHS"]:
         return False
 
     # Gate 2: Structural — Density
-    if row["presence_rate"] < config.CONFIG["_ELIGIBILITY_MIN_PRESENCE"]:
+    if row["presence_rate"] < config_time_series.CONFIG["_ELIGIBILITY_MIN_PRESENCE"]:
         return False
 
     # Gate 3: Signal Quality — Mean
     # NOTE: Must come before gates 4 and 6.
     # If mean == 0, cv = std/mean = inf and max/mean = inf — both undefined.
     # Passing mean >= MIN_MEAN guarantees mean > 0 for all downstream math.
-    if row["mean"] < config.CONFIG["_ELIGIBILITY_MIN_MEAN"]:
+    if row["mean"] < config_time_series.CONFIG["_ELIGIBILITY_MIN_MEAN"]:
         return False
 
     # Gate 4: Variability — CV (noise ceiling)
-    if row["cv"] > config.CONFIG["_ELIGIBILITY_MAX_CV"]:
+    if row["cv"] > config_time_series.CONFIG["_ELIGIBILITY_MAX_CV"]:
         return False
 
     # Gate 5: Variability — Unique values (near-constant series)
-    if row["n_unique"] < config.CONFIG["_ELIGIBILITY_MIN_UNIQUE"]:
+    if row["n_unique"] < config_time_series.CONFIG["_ELIGIBILITY_MIN_UNIQUE"]:
         return False
 
     # Gate 6: Outlier / Concentration — Spike Ratio
     # mean > 0 is guaranteed by gate 3, so no ZeroDivisionError possible here.
     max_to_mean = row["max"] / row["mean"]
-    if max_to_mean > config.CONFIG["_ELIGIBILITY_MAX_SPIKE_RATIO"]:
+    if max_to_mean > config_time_series.CONFIG["_ELIGIBILITY_MAX_SPIKE_RATIO"]:
         return False
 
     return True
@@ -62,14 +62,14 @@ def _is_adf_eligible(row) -> bool:
 # Robust Augmented Dickey-Fuller (ADF) Test Wrapper
 def _stationarity(
     series: pd.Series,
-    alpha=config.CONFIG["_ADF_ALPHA"],
-    max_lags=config.CONFIG["_ADF_MAX_LAGS"],
-    regression=config.CONFIG["_ADF_REGRESSION"],
-    autolag=config.CONFIG["_ADF_AUTO_LAG"],
-    min_obs=config.CONFIG["_ADF_MIN_OBS"],
-    const_threshold=config.CONFIG["_ADF_CONST_THRESHOLD"],
-    max_lag_monthly=config.CONFIG["_ADF_MAX_LAG_MONTHLY"],
-    log_transform=config.CONFIG["_LOG_TRANSFORM"],
+    alpha=config_time_series.CONFIG["_ADF_ALPHA"],
+    max_lags=config_time_series.CONFIG["_ADF_MAX_LAGS"],
+    regression=config_time_series.CONFIG["_ADF_REGRESSION"],
+    autolag=config_time_series.CONFIG["_ADF_AUTO_LAG"],
+    min_obs=config_time_series.CONFIG["_ADF_MIN_OBS"],
+    const_threshold=config_time_series.CONFIG["_ADF_CONST_THRESHOLD"],
+    max_lag_monthly=config_time_series.CONFIG["_ADF_MAX_LAG_MONTHLY"],
+    log_transform=config_time_series.CONFIG["_LOG_TRANSFORM"],
 ) -> dict:
     """
     Robust Augmented Dickey-Fuller (ADF) test wrapper.
