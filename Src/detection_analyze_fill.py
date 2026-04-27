@@ -91,9 +91,9 @@ def run_integrity_report(
     freq: str = "MS"
 ) -> Dict:
     """
-    Panel integrity + structural sparsity classification:
+    Panel integrity + structural sparsity checks (classification step removed).
     - separates missingness vs sparse processes
-    - identifies regime type per group
+    - identifies true panel gaps
     - Force recompute if input changes
         data_dict = _aggregate_counts(df, force_refresh=True)
     """
@@ -143,20 +143,7 @@ def run_integrity_report(
     ).sort_values()
 
     # -------------------------------------------------
-    # Step 5: Structural regime classification
-    # -------------------------------------------------
-    def classify(r):
-        if r < 0.30:
-            return "rare_event_zero_inflated"
-        elif r < 0.80:
-            return "intermittent_sparse"
-        else:
-            return "stable_panel"
-
-    regime = coverage_ratio.apply(classify)
-
-    # -------------------------------------------------
-    # Step 6: Summary stats
+    # Step 5: Summary stats
     # -------------------------------------------------
     expected = len(full_index)
     actual = len(data)
@@ -168,165 +155,44 @@ def run_integrity_report(
     print("\n📊 Crime Data Integrity Summary")
     print("-" * 40)
     print(f"Date range:       {start} to {end}")
-    print(f"Total groups:     {len(groups)}")
-    print(f"Expected rows:    {expected}")
-    print(f"Actual rows:      {actual}")
-    print(f"Missing rows:     {missing}")
-    print(f"Duplicates:       {duplicates}")
+    print(f"Total groups:     {(len(groups)):,}")
+    print(f"Expected rows:    {expected:,}")
+    print(f"Actual rows:      {actual:,}")
+    print(f"Missing rows:     {missing:,}")
+    print(f"Duplicates:       {duplicates:,}")
     print(f"Completeness:     {completeness:.2%}")
 
     # -------------------------------------------------
-    # Step 7: Missingness (ONLY true gaps)
+    # Step 6: Missingness (ONLY true gaps)
     # -------------------------------------------------
     if missing > 0:
-        print("\n🔍 True missing panel gaps:")
+        print("\n🔍 True Missing Crime Gaps:")
         print(missing_by_group.to_string())
 
     # -------------------------------------------------
-    # Step 8: Structural regime view
+    # Step 7: Sparse / risky groups view (coverage ratio)
     # -------------------------------------------------
-    print("\n🧠 Structural Crime Type classification:")
-    print(regime.value_counts().to_string())
-
-    print("\n📉 Sparse / risky groups:")
-    print(regime[regime != "stable_panel"].to_string())
+    print("\n📉 Sparse / Risky Crime Groups:")
+    sparse = coverage_ratio[coverage_ratio < 1.0]
+    if not sparse.empty:
+        print(sparse.to_string())
+    else:
+        print("None")
 
     # -------------------------------------------------
-    # Step 9: Return structured output
-        # -------------------------------------------------
+    # Step 8: Return structured output
+    # -------------------------------------------------
     return {
-        "data": data,
+        "date_range": (start, end),
         "missing": missing_df,
         "missing_by_group": missing_by_group,
-        "coverage": coverage_ratio,
+        "coverage_ratio": coverage_ratio,
         "duplicates": duplicates,
-        "expected_rows": len(full_index),
-        "actual_rows": len(data),
-        "missing_rows": len(missing_df)
+        "expected_rows": expected,
+        "actual_rows": actual,
+        "missing_rows": missing,
+        "completeness": completeness
     }
-
-# --- Main function for crime data integrity reporting
-def get_integrity_report(
-    data_df: pd.DataFrame,
-    group_col: str = _GROUP_KEY,
-    date_col: str = _DATE_KEY,
-    value_col: str = _COUNTER_KEY,
-    freq: str = "MS",
-    top_n: int = 5,
-    verbose: bool = True
-) -> Dict:
-    """
-    High-performance integrity check using MultiIndex reindexing.
-    """
-    # -------------------------------------------------
-    # 0. Aggregate safely to remove duplicates
-    # -------------------------------------------------
-    data_dict = _aggregate_counts(data_df)
-    data = data_dict["data"]
-    start = data_dict["start_date"]
-    end = data_dict["end_date"]
-
-    if data.duplicated([group_col, date_col]).any():
-        raise ValueError("Duplicate group-date pairs detected after aggregation.")
-
-    # -------------------------------------------------
-    # 1. Build full panel grid
-    # -------------------------------------------------
-    unique_groups = data[group_col].unique()
-    full_range = pd.date_range(start=start, end=end, freq=freq, name=date_col)
-
-    full_index = pd.MultiIndex.from_product(
-        [unique_groups, full_range],
-        names=[group_col, date_col]
-    )
-
-    # -------------------------------------------------
-    # 2. Reindex to full panel (introduces missing rows)
-    # -------------------------------------------------
-    indexed_df = (
-        data.set_index([group_col, date_col])
-        .sort_index()
-        .reindex(full_index)
-    )
-    # -------------------------------------------------
-    # 3. Vectorized missing detection
-    # -------------------------------------------------
-    vals = indexed_df[value_col].values
-    is_missing = np.isnan(vals)
-
-    indexed_df["is_missing"] = is_missing
-    indexed_df["is_zero"] = np.equal(vals, 0)
-
-    # -------------------------------------------------
-    # 4. NEW: Build explicit missing-data report table
-    # -------------------------------------------------
-    missing_df = (
-        indexed_df.loc[indexed_df["is_missing"]]
-        .reset_index()
-        .copy()
-    )
-    # -------------------------------------------------
-    # 5. Add year-month feature for reporting
-    # -------------------------------------------------
-    missing_df["year_month"] = missing_df[date_col].dt.to_period("M").astype(str)
-    # -------------------------------------------------
-    # 5a. Optional: reorder columns for readability
-    # -------------------------------------------------
-    missing_df = missing_df[[group_col, date_col, "year_month", value_col]]
-
-    # -------------------------------------------------
-    # 6. Coverage stats
-    # -------------------------------------------------
-    coverage = 1 - indexed_df.groupby(level=0, observed=True)["is_missing"].mean()
-    sparse_groups = coverage.sort_values().head(top_n)
-
-    # -------------------------------------------------
-    # 7. Verbose summary
-    # -------------------------------------------------
-    if verbose:
-        results = {
-            "date_range": f"{start} to {end}",
-            "total_groups": len(unique_groups),
-            "total_months": len(full_range),
-            "total_records": len(indexed_df),
-            "total_missing": int(is_missing.sum()),
-            "coverage_mean": coverage.mean(),
-            "coverage_min": coverage.min(),
-            "coverage_max": coverage.max(),
-            "sparse_groups": sparse_groups
-        }
-        _print_summary(results)
-    # -------------------------------------------------
-    # 8. Return full diagnostics
-    # -------------------------------------------------
-    return {
-        "integrity_df": indexed_df.reset_index(),
-        "missing_df": missing_df,
-        "coverage": coverage,
-        "sparse_groups": sparse_groups,
-        "total_missing": int(is_missing.sum())
-    }
-
-
-# --- Helper function to print a clean summary report
-def _print_summary(results: Dict)-> None:
-    """
-    Prints a clean report from the results dictionary.
-    """
-    print("\n" + "="*30)
-    print("📊 Crime Data Integrity Report")
-    print("="*30)
-    print(f"Date Range:           {results['date_range']}")
-    print(f"Total Groups:         {results['total_groups']}")
-    print(f"Total Months:         {results['total_months']}")
-    print(f"Total Records:        {results['total_records']:,}")
-    print(f"Total Missing Records: {results['total_missing']}")
-    print(f"Average Coverage:      {results['coverage_mean']:.2%}")
-    print(f"Minimum Coverage:      {results['coverage_min']:.2%}")
-    print(f"Maximum Coverage:      {results['coverage_max']:.2%}")
-    print("\n⚠️  Most Sparse Groups:")
-    print(results['sparse_groups'])
-    print("="*30 + "\n")
 
 
 # --- Main function for filling missing data and reporting
@@ -415,6 +281,7 @@ def fill_missing(
     # 7. Return results
     # -------------------------------------------------
     return {
+        "date_range": (start, end),
         "filled_df": panel.reset_index(),
         "summary": summary
     }
