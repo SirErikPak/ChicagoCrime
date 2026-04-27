@@ -15,10 +15,10 @@ min_step: float
 """
 # EPS Grid Configuration for build_eps_grid.py
 config = {
-    "n_per_decade": 6,
-    "include_fixed": [1e-5, 1e-4, 1e-3, 0.01, 0.03, 0.05, 0.07, 0.1, 0.5, 1.0],
-    "min_multiplier_candidates": [0.1, 0.25, 0.5, 1.0],
-    "q_low": 0.05,
-    "floor": 1e-12,
-    "min_step": 0.20,
+    "_N_PER_DECADE": 6,
+    "_INCLUDE_FIXED": [1e-5, 1e-4, 1e-3, 0.01, 0.03, 0.05, 0.07, 0.1, 0.5, 1.0],
+    "_MIN_MULTIPLIER_CANDIDATES": [0.1, 0.25, 0.5, 1.0],
+    "_Q_LOW": 0.05,
+    "_FLOOR": 1e-12,
+    "_MIN_STEP": 0.20,
     }

@@ -2,6 +2,15 @@ import warnings
 import numpy as np
 import pandas as pd
 from typing import Sequence
+import build_eps_grid as eps
+
+# Confgiguration parameters for build_eps_grid.py
+_N_PER_DECADE_N_PER_DECADE  = eps.config["_N_PER_DECADE_N_PER_DECADE"]
+_INCLUDE_FIXED              = eps.config["_INCLUDE_FIXED"]
+_MIN_MULTIPLIER_CANDIDATES  = eps.config["_MIN_MULTIPLIER_CANDIDATES"]
+_Q_LOW                      = eps.config["_Q_LOW"]
+_FLOOR                      = eps.config["_FLOOR"]
+_MIN_STEP                   = eps.config["_MIN_STEP"]
 
 
 # ---------------------------------------------------------------------------
@@ -131,15 +140,14 @@ def _assemble_and_thin(
 # ---------------------------------------------------------------------------
 # Main function
 # ---------------------------------------------------------------------------
-
 def build_eps_grid(
     pivot: pd.DataFrame,
-    n_per_decade: int = 6,
-    include_fixed: Sequence[float] = (1e-5, 1e-4, 1e-3, 0.01, 0.03, 0.05, 0.07, 0.1, 0.5, 1.0),
-    min_multiplier_candidates: Sequence[float] = (0.1, 0.25, 0.5, 1.0),
-    q_low: float = 0.05,
-    floor: float = 1e-12,
-    min_step: float = 0.20,
+    n_per_decade: int = _N_PER_DECADE_N_PER_DECADE,
+    include_fixed =_INCLUDE_FIXED,
+    min_multiplier_candidates =_MIN_MULTIPLIER_CANDIDATES,
+    q_low =_Q_LOW,
+    floor =_FLOOR,
+    min_step =_MIN_STEP,
 ) -> np.ndarray:
     fixed = _validate_fixed(include_fixed, floor)
     pos = _extract_positive(pivot)
