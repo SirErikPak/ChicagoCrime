@@ -5,14 +5,14 @@ import detection_config as cfg
 
 
 # Define constants for column names
-_DATE_KEY       = cfg.config["_DATE_KEY"]
-_GROUP_KEY      = cfg.config["_GROUP_KEY"]
-_COUNTER_KEY    = cfg.config["_COUNTER_KEY"]
+_DATE_KEY         = cfg.config["_DATE_KEY"]
+_GROUP_KEY        = cfg.config["_GROUP_KEY"]
+_COUNTER_KEY      = cfg.config["_COUNTER_KEY"]
+# global cache for aggregated results
+AGG_DICT_RESULT   = None 
 
 
 # --- Helper function to aggregate counts safely (removing duplicates)
-AGG_DICT_RESULT = None  # global cache
-
 def _aggregate_counts(
     data_df: pd.DataFrame,
     group_col: str = _GROUP_KEY,
