@@ -1,13 +1,13 @@
 import warnings
 import numpy as np
 import pandas as pd
-from typing import Sequence
-import build_eps_grid as eps
+from typing import Sequence, Dict
+import eps_grid_config as eps
 import detection_config as cfg
 
 
 # Confgiguration parameters for build_eps_grid.py
-_N_PER_DECADE_N_PER_DECADE  = eps.config["_N_PER_DECADE_N_PER_DECADE"]
+_N_PER_DECADE_N_PER_DECADE  = eps.config["_N_PER_DECADE"]
 _INCLUDE_FIXED              = eps.config["_INCLUDE_FIXED"]
 _MIN_MULTIPLIER_CANDIDATES  = eps.config["_MIN_MULTIPLIER_CANDIDATES"]
 _Q_LOW                      = eps.config["_Q_LOW"]
@@ -23,7 +23,8 @@ _COUNTER_KEY                = cfg.config["_COUNTER_KEY"]
 # Pviot Table for building the eps grid
 # ---------------------------------------------------------------------------
 def _pivot(data_df: pd.DataFrame, index: str = _DATE_KEY, 
-           column: str = _GROUP_KEY, values: str = _COUNTER_KEY) -> pd.DataFrame:
+           column: str = _GROUP_KEY, 
+           values: str = _COUNTER_KEY) -> pd.DataFrame:
     """
     Pivots long-format data into a wide matrix with optional caching.
     
@@ -241,7 +242,7 @@ def build_eps_grid(
     q_low: float = _Q_LOW,
     floor: float = _FLOOR,
     min_step: float = _MIN_STEP,
-) -> np.ndarray:
+) -> Dict:
     """
     Constructs an adaptive logarithmic grid for epsilon values.
     
@@ -274,4 +275,5 @@ def build_eps_grid(
     
     # Generate anchors based on the data distribution and assemble the final grid
     anchors = _build_anchors(pos, q_low, np.asarray(min_multiplier_candidates), floor)
-    return _assemble_and_thin(anchors, fixed, n_per_decade, min_step)
+    return { 'eps_values': _assemble_and_thin(anchors, fixed, n_per_decade, min_step),  
+            'pivot_data': pivot_data }
