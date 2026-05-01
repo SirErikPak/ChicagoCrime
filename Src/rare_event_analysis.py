@@ -380,7 +380,7 @@ def plot_rare_event_combined(
         frameon=True,
     )
     ax.set_xlim(combined.index[0], combined.index[-1] + pd.offsets.MonthBegin(1))
-    ax.set_title("Rare-Event Crimes — Monthly Co-occurrence State", pad=40)
+    ax.set_title("Rare-Event / Removed Crimes — Monthly Co-occurrence State", pad=40)
     ax.set_xlabel("Year-Month")
     _configure_date_axis(ax)
 

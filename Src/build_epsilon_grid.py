@@ -2,17 +2,17 @@ import warnings
 import numpy as np
 import pandas as pd
 from typing import Sequence, Dict
-import eps_grid_config as eps
+import epsilon_grid_config as egc
 import detection_config as cfg
 
 
 # Confgiguration parameters for build_eps_grid.py
-_N_PER_DECADE_N_PER_DECADE  = eps.config["_N_PER_DECADE"]
-_INCLUDE_FIXED              = eps.config["_INCLUDE_FIXED"]
-_MIN_MULTIPLIER_CANDIDATES  = eps.config["_MIN_MULTIPLIER_CANDIDATES"]
-_Q_LOW                      = eps.config["_Q_LOW"]
-_FLOOR                      = eps.config["_FLOOR"]
-_MIN_STEP                   = eps.config["_MIN_STEP"]
+_N_PER_DECADE_N_PER_DECADE  = egc.config["_N_PER_DECADE"]
+_INCLUDE_FIXED              = egc.config["_INCLUDE_FIXED"]
+_MIN_MULTIPLIER_CANDIDATES  = egc.config["_MIN_MULTIPLIER_CANDIDATES"]
+_Q_LOW                      = egc.config["_Q_LOW"]
+_FLOOR                      = egc.config["_FLOOR"]
+_MIN_STEP                   = egc.config["_MIN_STEP"]
 # Pivot table keys from detection_config.py
 _DATE_KEY                   = cfg.config["_DATE_KEY"]
 _GROUP_KEY                  = cfg.config["_GROUP_KEY"]

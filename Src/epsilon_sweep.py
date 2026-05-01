@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import spearmanr, kendalltau
 
 
-def sweep_eps_grid(
+def sweep_epsilon_grid(
     pivot: pd.DataFrame,
     eps_grid: Iterable[float],
     large_clr_threshold: float = 10.0,
@@ -165,7 +165,7 @@ def sweep_eps_grid(
         plt.show()
 
     if verbose:
-        display_df = diagnostics_df.drop(columns=["T", "K", "rank_unique_ratio", "pct_cells_near_zero", "n_zero_cells_pre_smooth"], errors="ignore").reset_index()
+        display_df = diagnostics_df.drop(columns=["T", "K", "rank_unique_ratio",  "n_zero_cells_pre_smooth"], errors="ignore").reset_index()
         print(display_df.to_string(index=False))
 
     return {"diagnostics_df": diagnostics_df, "clr_dict": clr_dict, "meta": meta, "fig": fig}

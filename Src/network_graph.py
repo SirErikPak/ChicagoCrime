@@ -39,7 +39,7 @@ def compute_influence(G):
     Compute node influence as weighted degree (node strength).
 
     Returns:
-    - dict: node → influence score
+    - dict: node -> influence score
 
     Notes:
     - Handles missing weights safely
@@ -65,7 +65,7 @@ def compute_influence(G):
 def compute_louvain(G):
     """
     Run Louvain community detection and return:
-    - partition (node → community)
+    - partition (node -> community)
     - modularity score
 
     Notes:

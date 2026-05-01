@@ -135,7 +135,7 @@ def run_dunn_posthoc(
         .tolist()
     )
 
-    # ── Step 2: Aggregate to (crime, era, time_col) → sum of counts ───────
+    # ── Step 2: Aggregate to (crime, era, time_col) -> sum of counts ───────
     agg = (
         data
         .groupby([CRIME_COL, ERA_COL, time_col], observed=True)[COUNT_COL]

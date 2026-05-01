@@ -211,7 +211,7 @@ def plot_global_mean_variance(df, figsize: tuple = (12, 6), n_labels: int = 5) -
         along the y-pixel axis, then convert anchor positions back to data
         space for annotate(). This makes spacing uniform regardless of scale.
         """
-        # Transform data coords → display (pixel) coords
+        # Transform data coords -> display (pixel) coords
         pts = ax.transData.transform(
             [(r['mean'], r['var']) for _, r in subset.iterrows()]
         )   # shape (n, 2) in pixels
@@ -228,7 +228,7 @@ def plot_global_mean_variance(df, figsize: tuple = (12, 6), n_labels: int = 5) -
         x_offset = -90 if side == 'left' else 90        # px left/right of point
 
         for (px, py), y_label, row in zip(pts, y_spread, rows):
-            # Label anchor in display space → back to data space
+            # Label anchor in display space -> back to data space
             lx, ly = ax.transData.inverted().transform(
                 (px + x_offset, y_label)
             )

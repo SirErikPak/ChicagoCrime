@@ -9,6 +9,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from scatterd import scatterd
 # Python file imports
 import hierarchy_clustering
+from typing import Tuple
 
 
 # ── 1. Fancy PCA Plot ────────────────────────────────────────────────
@@ -23,36 +24,40 @@ def fancy_pca_plot(
     density: bool = True
 ):
     """
-    Enhanced PCA scatter plot with density overlay and sorted loadings.
+    Enhanced PCA scatter plot with optional density overlay and sorted loadings.
 
     Parameters
     ----------
-    data : DataFrame
+    data : pd.DataFrame
         Original dataset used for PCA (columns = variables).
-    pc_scores : ndarray
+    pc_scores : np.ndarray
         PCA-transformed coordinates (n_samples x n_components).
-    pca_model_object : PCA
-        Fitted PCA model.
+    pca_model_object : object
+        Fitted PCA model (must expose `.components_` and `.explained_variance_ratio_`).
     labels : array-like, optional
         Cluster IDs or group labels for coloring points.
-    clusters : array-like, optional
-        If provided, saves the figure to ../Image/{file}.png.
+    file : str, optional
+        If provided, the plot will be saved to `../Image/{file}.png`.
     point_size : int
         Marker size.
     font_size : int
         Font size for labels.
     density : bool
-        Whether to overlay KDE density.
+        Whether to overlay a KDE density estimate behind the scatter.
     """
 
-    # Compute and sort loadings for interpretation
+    # Compute and sort PCA loadings (features × PCs) for interpretation.
+    # The DataFrame is constructed from the PCA components and indexed by
+    # original feature names so downstream code can inspect which features
+    # drive PC1.
     loadings = pd.DataFrame(
         pca_model_object.components_.T,
         index=data.columns,
         columns=[f"PC{i+1}" for i in range(pca_model_object.n_components_)]
     ).sort_values("PC1", ascending=False)
 
-    # Density settings (only if enabled)
+    # Density settings (only if enabled). We pass these through to `scatterd`
+    # which will render a filled contour KDE behind the scatter when provided.
     args_density = (
         {'fill': True, 'thresh': 0, 'levels': 100, 'cmap': "vlag"}
         if density else None
@@ -76,11 +81,10 @@ def fancy_pca_plot(
     ax.set_xlabel(f"PC1 ({evr[0]*100:.2f}% Explained Variance)", fontsize=font_size)
     ax.set_ylabel(f"PC2 ({evr[1]*100:.2f}% Explained Variance)", fontsize=font_size)
 
-    # dispaly explained variance
+    # display explained variance (print to console for quick inspection)
     print("----- PCA Variance Explained -----")
-    print(f"Total PC1 & PC2 Variance: {pca_model_object.explained_variance_ratio_[:2].sum():.2f}")
-    print(f"Explained Variance Ratios: \n"
-          f"{pca_model_object.explained_variance_ratio_}\n") 
+    print(f"Total PC1 & PC2 Variance: {pca_model_object.explained_variance_ratio_[:2].sum()*100:.2f}%")
+    print("Explained Variance Ratios:", pca_model_object.explained_variance_ratio_)
 
     # Legend for clusters if labels are provided
     if labels is not None:
@@ -91,8 +95,9 @@ def fancy_pca_plot(
             title_fontsize=font_size,
             frameon=False
         )
-    # Create a dataframe for the map
-    df_pca = pd.DataFrame(data = pc_scores[:, :2], columns = ['PC1', 'PC2'], index=data.index)
+    # Create a small DataFrame of the first two PC coordinates indexed by
+    # the original sample index; useful for downstream plotting or labeling.
+    df_pca = pd.DataFrame(data=pc_scores[:, :2], columns=['PC1', 'PC2'], index=data.index)
 
     # Save file if requested
     if file:
@@ -113,7 +118,7 @@ def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
     pairs of rows in the input DataFrame, converts the condensed distance vector
     into a full square distance matrix, and visualizes it as a heatmap. The
     diagonal is masked because self-distances are always zero and not meaningful
-    for interpretation. A custom green→yellow→red colormap is used to highlight
+    for interpretation. A custom green->yellow->red colormap is used to highlight
     low, medium, and high distances on a fixed scale from 0 to 2.
 
     Parameters
@@ -130,9 +135,9 @@ def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
     -----
     - Correlation distance is defined as:  d = 1 - corr(x, y)
       Values range from:
-        0 → perfectly correlated (same shape)
-        1 → uncorrelated
-        2 → perfectly anti-correlated (opposite shape)
+        0 -> perfectly correlated (same shape)
+        1 -> uncorrelated
+        2 -> perfectly anti-correlated (opposite shape)
     - The diagonal is masked because each row has distance 0 to itself.
     - The heatmap uses a fixed color scale (0 to 2) for comparability across runs.
 
@@ -175,6 +180,7 @@ def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
     plt.show()
 
 
+
 # ── 3. Hierarchical Clustering Dendrogram ────────────────────────────────────────────────
 def plot_clustering(
     data: pd.DataFrame, 
@@ -183,19 +189,26 @@ def plot_clustering(
     figsize: tuple=(8,4), 
     rotation: int=45
 ) -> None:
-    """
-    Perform hierarchical clustering and plot a dendrogram.
+    """Perform hierarchical clustering and plot a dendrogram.
 
-    Parameters:
-    - data: pd.DataFrame, rows as observations, columns as features
-    - method: str, linkage method ('single', 'complete', 'average', 'ward', etc.)
-    - metric: str, distance metric ('euclidean', 'correlation', etc.)
-    - figsize: tuple, figure size
-    - rotation: int, rotation angle for leaf labels
-    - return_linkage: bool, if True, return the linkage matrix
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Rows are observations and columns are features.
+    method : str
+        Linkage method ('single', 'complete', 'average', 'ward', etc.).
+    metric : str
+        Distance metric ('euclidean', 'correlation', etc.).
+    figsize : tuple, optional
+        Figure size in inches.
+    rotation : int, optional
+        Rotation angle for leaf labels.
 
-    Returns:
-    - Z: linkage matrix (only if return_linkage=True)
+    Returns
+    -------
+    None
+        Displays a dendrogram plot. The underlying linkage matrix is computed
+        via `hierarchy_clustering.linkage_matrix` but is not returned.
     """
     # call helper linkage matrix function
     Z = hierarchy_clustering.linkage_matrix(data, method, metric)
@@ -230,11 +243,12 @@ def bar_plot(data: pd.DataFrame,
 
     Args:
         data (pd.DataFrame): The source dataframe containing crime statistics.
-        count (str): The column name representing the numerical frequency of incidents 
+        count (str): The column name representing the numerical frequency of incidents
             (plotted on the x-axis).
-        index (str): The column name used for indexing (not explicitly used in the 
-            Seaborn call, but often required for pre-aggregated dataframes.
-        crime_code (str): The column name representing the categorical crime 
+        index (str): Controls whether the data is treated as indexed when creating
+            the title. Pass `'I'` to indicate indexed data; otherwise pass any
+            other value.
+        crime_code (str): The column name representing the categorical crime
             classification (plotted on the y-axis and used for color encoding).
         column (str): The column name used to create the faceted grid (e.g., 'District').
 
@@ -393,6 +407,7 @@ def stacked_bar_plot(data, title='', figsize=(12, 8), cmap='Set2', sort_index=Tr
         data = data.sort_index(ascending=False)
 
     # Calculate row-wise percentages
+    # Convert counts to percentages per row so the stacked bar sums to 100%
     data_pct = data.div(data.sum(axis=1), axis=0) * 100
     
     # Setup the figure and primary plot
@@ -443,6 +458,20 @@ def stacked_bar_plot(data, title='', figsize=(12, 8), cmap='Set2', sort_index=Tr
 
 # ── 7. Inconsistency Plot ────────────────────────────────────────────────
 def plot_cuts(heights: np.array, incons: np.array) -> None:
+    """Plot inconsistency profile across linkage merge heights.
+
+    Parameters
+    ----------
+    heights : np.ndarray
+        Array of merge heights (from hierarchical clustering).
+    incons : np.ndarray
+        Array of inconsistency coefficients corresponding to each merge.
+
+    Returns
+    -------
+    None
+        Displays a line plot of inconsistency vs merge height.
+    """
     # Sort by height (optional but makes the plot cleaner)
     order = np.argsort(heights)
     h_sorted = heights[order]
@@ -459,3 +488,129 @@ def plot_cuts(heights: np.array, incons: np.array) -> None:
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.show()
+
+
+# ── 8. Crime Count Plots ────────────────────────────────────────────────
+def plot_crime_counts(
+    esp_results: dict,
+    column: str = "Gambling",
+    figsize: Tuple[int, int] = (14, 8),
+    bins: int = 40,
+    show: bool = True,
+) -> dict:
+    """Plot a pivot column's raw time series and its non-zero distribution.
+
+    This helper extracts a single column (time series) from
+    ``esp_results['pivot_data']``, computes basic zero/non-zero summary
+    statistics, plots the raw counts and a histogram of non-zero values,
+    and returns the computed objects for downstream inspection or tests.
+
+    Parameters
+    ----------
+    esp_results : dict
+        Mapping expected to contain key ``'pivot_data'`` whose value is a
+        pandas-compatible mapping (DataFrame or dict-like) of time series.
+    column : str, optional
+        The pivot column to analyze and plot. Default is ``'Gambling'``.
+    figsize : tuple[int, int], optional
+        Figure size passed to ``plt.subplots``. Defaults to ``(14, 8)``.
+    bins : int, optional
+        Number of bins used for the non-zero histogram. Defaults to 40.
+    show : bool, optional
+        If True (default), call ``plt.show()`` before returning.
+
+    Returns
+    -------
+    dict
+        A dictionary with the following keys:
+        - ``series`` : pd.Series   -- the extracted series (index reset)
+        - ``stats``  : dict        -- summary statistics (n_total, n_zeros, n_nonzero,
+                                     mean_nonzero, median_nonzero, max_nonzero)
+        - ``fig``    : matplotlib.figure.Figure
+        - ``axes``   : numpy.ndarray of Axes
+
+    Notes
+    -----
+    - The function treats values equal to ``0`` as structural zeros and
+      excludes them from the histogram (the histogram only shows non-zero
+      counts).
+    - Missing or absent columns raise a ``KeyError`` to fail fast in tests.
+    """
+    # Validate input structure and extract the pivot mapping
+    pivot = esp_results.get("pivot_data")
+    if pivot is None:
+        raise KeyError("esp_results must contain key 'pivot_data'.")
+
+    # Fail fast if requested column is missing (helps unit tests and callers)
+    if column not in pivot:
+        raise KeyError(f"Column '{column}' not found in esp_results['pivot_data'].")
+
+    # Build a flat pandas Series (index reset) representing the raw time series
+    series = pd.Series(pivot[column]).reset_index(drop=True)
+
+    # Summary counts: total, zeros, and non-zero mask
+    n_total = len(series)
+    n_zeros = int((series == 0).sum())
+    nonzero = series[series > 0]
+
+    # Basic numeric summaries for non-zero values; None when no non-zero entries
+    stats = {
+        "n_total": int(n_total),
+        "n_zeros": int(n_zeros),
+        "n_nonzero": int(len(nonzero)),
+        "mean_nonzero": float(nonzero.mean()) if len(nonzero) > 0 else None,
+        "median_nonzero": float(nonzero.median()) if len(nonzero) > 0 else None,
+        "max_nonzero": int(nonzero.max()) if len(nonzero) > 0 else None,
+    }
+
+    # Create two stacked subplots: top shows the raw time series, bottom shows
+    # the histogram of the non-zero values (distribution of observed counts).
+    fig, axes = plt.subplots(2, 1, figsize=figsize)
+
+    # Top subplot: raw counts over time with a horizontal zero reference
+    axes[0].plot(series.values, color="steelblue", linewidth=0.8)
+    axes[0].axhline(0, color="red", linewidth=0.5, linestyle="--")
+    axes[0].set_title(f"{column} — Raw Counts Across {n_total} Months")
+    axes[0].set_xlabel("Month Index")
+    axes[0].set_ylabel("Count")
+    axes[0].set_xlim(0, max(0, n_total - 1))
+
+    # Annotate number of zero months in the plot area (visible summary)
+    axes[0].text(
+        0.01,
+        0.95,
+        f"Zero months: {n_zeros} / {n_total}",
+        transform=axes[0].transAxes,
+        fontsize=10,
+        verticalalignment="top",
+        color="red",
+    )
+
+    # Bottom subplot: histogram of the observed (positive) counts only
+    axes[1].hist(nonzero.values, bins=bins, color="steelblue", edgecolor="white")
+    axes[1].set_title(f"{column} — Distribution of Non-Zero Counts")
+    axes[1].set_xlabel("Count")
+    axes[1].set_ylabel("Frequency")
+
+    # Summary annotation on the histogram: show non-zero sample size and mean
+    axes[1].text(
+        0.99,
+        0.95,
+        f"Non-zero months: {len(nonzero)}\nMean: {stats['mean_nonzero']:.1f}" if stats["mean_nonzero"] is not None else "No non-zero months",
+        transform=axes[1].transAxes,
+        fontsize=10,
+        verticalalignment="top",
+        horizontalalignment="right",
+    )
+
+    plt.tight_layout()
+    if show:
+        plt.show()
+
+    # Return the series, computed stats, and figure/axes for tests or further use
+    return {
+        "series": series,
+        "stats": stats,
+        "fig": fig,
+        "axes": axes,
+    }

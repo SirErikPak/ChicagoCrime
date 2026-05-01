@@ -28,8 +28,8 @@ Distance matrix roles:
 
 Hypothesis test:
     rho(dtw_pre, dtw_post) < rho(dtw_pre, dtw_covid)
-    → post-COVID rhythms diverged MORE from baseline than COVID rhythms
-    → confirms temporal rhythm reorganization occurred later
+    -> post-COVID rhythms diverged MORE from baseline than COVID rhythms
+    -> confirms temporal rhythm reorganization occurred later
 
 Usage:
     import hc
