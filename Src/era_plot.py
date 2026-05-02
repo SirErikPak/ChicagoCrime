@@ -261,7 +261,7 @@ def plot_mean_variance_analysis(
     """
     Rolling mean-variance diagnostic for a single crime category.
 
-    Renders two side-by-side panels — linear and log-log — so scale-dependent
+    Renders two side-by-side panels - linear and log-log - so scale-dependent
     patterns (e.g. exponential mean-variance growth) are immediately visible
     without re-running the function.
 
@@ -290,7 +290,7 @@ def plot_mean_variance_analysis(
     if stats.empty:
         raise ValueError(f"No data after rolling window for crime_type={crime_type!r}.")
 
-    # 2. Figure — two panels sharing the same data but different scales 
+    # 2. Figure - two panels sharing the same data but different scales 
     sns.set_theme(style='whitegrid', context='notebook')
     fig, axes = plt.subplots(1, 2, figsize=figsize)
     fig.suptitle(f'Mean vs Variance: {crime_type}', fontsize=14, fontweight='bold', y=1.02)

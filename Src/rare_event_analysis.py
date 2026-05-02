@@ -201,7 +201,7 @@ def extract_rare_events(
     available = set(results_df["fbi_code_desc"].unique())
     missing = set(crime_names) - available
     for name in missing:
-        warnings.warn(f"'{name}' not found in data — skipping", UserWarning, stacklevel=2)
+        warnings.warn(f"'{name}' not found in data - skipping", UserWarning, stacklevel=2)
 
     ordered_crimes = [c for c in crime_names if c in available]
     if not ordered_crimes:
@@ -264,7 +264,7 @@ def plot_rare_event_grid(
     ncols: int = 2,
 ) -> Tuple[plt.Figure, List[plt.Axes]]:
     """
-    Render a grid of binary bar charts — one subplot per crime.
+    Render a grid of binary bar charts - one subplot per crime.
 
     Parameters
     ----------
@@ -351,7 +351,7 @@ def plot_rare_event_combined(
     """
     if len(ordered_crimes) < 2:
         warnings.warn(
-            "plot_rare_event_combined requires at least 2 crimes — skipping. "
+            "plot_rare_event_combined requires at least 2 crimes - skipping. "
             "Use the grid plot to visualise a single crime.",
             UserWarning,
             stacklevel=2,
@@ -380,7 +380,7 @@ def plot_rare_event_combined(
         frameon=True,
     )
     ax.set_xlim(combined.index[0], combined.index[-1] + pd.offsets.MonthBegin(1))
-    ax.set_title("Rare-Event / Removed Crimes — Monthly Co-occurrence State", pad=40)
+    ax.set_title("Rare-Event / Removed Crimes - Monthly Co-occurrence State", pad=40)
     ax.set_xlabel("Year-Month")
     _configure_date_axis(ax)
 

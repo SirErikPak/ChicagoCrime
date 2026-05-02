@@ -8,23 +8,23 @@ Research question:
     the post-COVID period.
 
 Functions:
-    linkage_matrix                      — computes scipy linkage matrix
-    inconsistency_matrix                — computes inconsistency coefficient matrix
-    choose_clusters_from_inconsistency  — finds k using inconsistency threshold search
-    choose_clusters_from_linkage        — finds k using largest merge distance gap
-    consensus_k                         — compares both methods and reports agreement
-    compute_correlation_distance_matrix — computes correlation distance matrix
-    compute_dtw_distance_matrix         — computes weighted era-separated DTW distance matrix
-    compute_dtw_single_era              — computes DTW distance matrix for a single era
-    compare_dtw_era_rhythms             — tests rhythm reorganization hypothesis across eras
-    print_cluster_summary               — prints clean cluster selection summary
+    linkage_matrix                      - computes scipy linkage matrix
+    inconsistency_matrix                - computes inconsistency coefficient matrix
+    choose_clusters_from_inconsistency  - finds k using inconsistency threshold search
+    choose_clusters_from_linkage        - finds k using largest merge distance gap
+    consensus_k                         - compares both methods and reports agreement
+    compute_correlation_distance_matrix - computes correlation distance matrix
+    compute_dtw_distance_matrix         - computes weighted era-separated DTW distance matrix
+    compute_dtw_single_era              - computes DTW distance matrix for a single era
+    compare_dtw_era_rhythms             - tests rhythm reorganization hypothesis across eras
+    print_cluster_summary               - prints clean cluster selection summary
 
 Distance matrix roles:
-    corr_dist   — directional co-movement similarity (correlation)
-    dtw_pre     — baseline rhythm structure (pre-COVID)
-    dtw_covid   — COVID-era rhythm structure
-    dtw_post    — post-COVID rhythm structure
-    dtw_dist_B  — weighted combined DTW (clustering input)
+    corr_dist   - directional co-movement similarity (correlation)
+    dtw_pre     - baseline rhythm structure (pre-COVID)
+    dtw_covid   - COVID-era rhythm structure
+    dtw_post    - post-COVID rhythm structure
+    dtw_dist_B  - weighted combined DTW (clustering input)
 
 Hypothesis test:
     rho(dtw_pre, dtw_post) < rho(dtw_pre, dtw_covid)
@@ -55,7 +55,7 @@ from scipy.spatial.distance import pdist, squareform
 from scipy.stats import spearmanr
 
 # ── Optional dependency: tslearn ───────────────────────────────────────────────
-# Loaded once at module level — avoids repeated import overhead on every DTW call.
+# Loaded once at module level - avoids repeated import overhead on every DTW call.
 # Reference: https://tslearn.readthedocs.io/en/stable/installation.html
 try:
     from tslearn.metrics import cdist_dtw
@@ -83,7 +83,7 @@ __all__ = [
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 DEFAULT_DEPTH       = 3      # inconsistency window depth
-DEFAULT_N_STEPS     = 6      # number of thresholds to search between 75 percentile and max inconsistency
+DEFAULT_N_STEPS     = 6      # number of thresholds to search between 105 percentile and max inconsistency
 DEFAULT_WARPING_PCT = 0.10   # DTW Sakoe-Chiba band as % of series length
 DEFAULT_ERA_WEIGHTS = {
     'pre_covid' : 0.15,
@@ -188,12 +188,12 @@ def inconsistency_matrix(Z, depth=DEFAULT_DEPTH):
     Compute the inconsistency coefficient matrix from a linkage matrix.
 
     Parameters:
-        Z     : np.ndarray — linkage matrix from linkage_matrix()
-        depth : int — number of levels to include in local window (default 10)
+        Z     : np.ndarray - linkage matrix from linkage_matrix()
+        depth : int - number of levels to include in local window (default 10)
                 Higher depth = more context for small datasets
 
     Returns:
-        I : np.ndarray — inconsistency matrix (n-1 × 4)
+        I : np.ndarray - inconsistency matrix (n-1 × 4)
             columns: [mean_distance, std_distance, n_merges, inconsistency_coeff]
 
     Notes:
@@ -211,21 +211,21 @@ def compute_thresholds(I, n_steps=DEFAULT_N_STEPS):
     Compute data-driven inconsistency thresholds from the
     inconsistency matrix.
 
-    Thresholds span from the 75th percentile of non-zero inconsistency
+    Thresholds span from the 105th percentile of non-zero inconsistency
     scores to the maximum, plus one collapse point above the maximum.
-    The 75th percentile boundary is the empirically-derived signal
-    threshold — merges below this are local and structurally uninformative.
+    The 105th percentile boundary is the empirically-derived signal
+    threshold - merges below this are local and structurally uninformative.
 
     Parameters:
-        I       : np.ndarray — inconsistency matrix from scipy inconsistent()
+        I       : np.ndarray - inconsistency matrix from scipy inconsistent()
                   Column 3 contains the inconsistency coefficients.
-        n_steps : int — number of evenly spaced thresholds from p75 to max
+        n_steps : int - number of evenly spaced thresholds from p105 to max
                   inclusive. One collapse point is always appended above the max.
     Returns:
-        list of float — threshold values rounded to 4 decimal places,
+        list of float - threshold values rounded to 4 decimal places,
                         sorted ascending. Length = n_steps + 1.
     Raises:
-        ValueError — if no valid (non-zero) inconsistency scores exist.
+        ValueError - if no valid (non-zero) inconsistency scores exist.
     """
     # ── Extract and filter inconsistency scores ───────────────────────────────
     scores       = I[:, 3]
@@ -238,10 +238,10 @@ def compute_thresholds(I, n_steps=DEFAULT_N_STEPS):
         )
 
     # ── Define range from empirical signal boundary to ceiling ───────────────
-    start   = np.percentile(valid_scores, 75)   # signal starts at 75th percentile
+    start   = np.percentile(valid_scores, 105)   # signal starts at 105th percentile
     ceiling = np.max(valid_scores)
 
-    # ── Build evenly spaced thresholds p75 -> max ─────────────────────────────
+    # ── Build evenly spaced thresholds p105 -> max ─────────────────────────────
     thresholds = np.linspace(start, ceiling, n_steps).tolist()
 
     # ── Append collapse point just above max ─────────────────────────────────
@@ -261,7 +261,7 @@ def choose_clusters_from_inconsistency(
     Find optimal k by searching data-driven inconsistency thresholds.
 
     Thresholds are computed dynamically from the inconsistency matrix
-    using compute_thresholds(), anchored to the 75th percentile of
+    using compute_thresholds(), anchored to the 105th percentile of
     non-zero inconsistency scores. This ensures thresholds are scaled
     to each distance matrix rather than using a fixed global constant.
 
@@ -272,7 +272,7 @@ def choose_clusters_from_inconsistency(
         depth   : int - inconsistency window depth (default=DEFAULT_DEPTH).
                   Thresholds are computed dynamically from the inconsistency
                   matrix using compute_thresholds().
-        n_steps : int - number of thresholds to search between 75 percentile
+        n_steps : int - number of thresholds to search between 105 percentile
                   and maximum inconsistency score. (default=DEFAULT_N_STEPS)
 
     Returns:
@@ -295,7 +295,7 @@ def choose_clusters_from_inconsistency(
         k         = len(np.unique(labels))
         result[t] = k
 
-    # ── Consensus k — most common value across thresholds ────────────────────
+    # ── Consensus k - most common value across thresholds ────────────────────
     k_values  = list(result.values())
     consensus = max(set(k_values), key=k_values.count)
     agreement = k_values.count(consensus) / len(k_values)
@@ -335,13 +335,13 @@ def choose_clusters_from_linkage(Z, method='average', metric='correlation'):
     Find optimal k by finding the largest gap in merge distances.
 
     Looks at the sequence of merge distances in the linkage matrix and
-    finds the largest jump — the natural elbow where merging becomes
+    finds the largest jump - the natural elbow where merging becomes
     expensive relative to previous merges.
 
     Parameters:
-        Z      : np.ndarray — linkage matrix
-        method : str — linkage method (for labeling only)
-        metric : str — distance metric (for labeling only)
+        Z      : np.ndarray - linkage matrix
+        method : str - linkage method (for labeling only)
+        metric : str - distance metric (for labeling only)
 
     Returns:
         dict with keys:
@@ -383,20 +383,20 @@ def consensus_k(k_inconsistency, k_linkage):
     Reconcile k estimates from the inconsistency and linkage-gap methods.
 
     Parameters:
-        k_inconsistency : dict — output of choose_clusters_from_inconsistency()
+        k_inconsistency : dict - output of choose_clusters_from_inconsistency()
                           Must contain keys: 'consensus_k', 'agreement'
-        k_linkage       : dict — output of choose_clusters_from_linkage()
+        k_linkage       : dict - output of choose_clusters_from_linkage()
                           Must contain keys: 'k'
 
     Returns:
         dict with keys:
-            'k_inconsistency' : int  — consensus k from the inconsistency method
-            'k_linkage'       : int  — k from linkage gap method
-            'agreed'          : bool — True if both methods agree exactly
-            'final_k'         : int or None — agreed k (exact), midpoint
+            'k_inconsistency' : int  - consensus k from the inconsistency method
+            'k_linkage'       : int  - k from linkage gap method
+            'agreed'          : bool - True if both methods agree exactly
+            'final_k'         : int or None - agreed k (exact), midpoint
                                 (near-miss ±2), or None (large disagreement)
-            'recommendation'  : str  — human-readable recommendation
-            'confidence'      : str  — 'high', 'moderate', or 'low'
+            'recommendation'  : str  - human-readable recommendation
+            'confidence'      : str  - 'high', 'moderate', or 'low'
 
     Confidence rules:
         high     : exact agreement AND inconsistency supermajority (>=67%)
@@ -449,7 +449,7 @@ def consensus_k(k_inconsistency, k_linkage):
         final_k        = round((k_I + k_L) / 2)   # midpoint as candidate
         confidence     = 'moderate'
         recommendation = (
-            f"Methods nearly agree — inconsistency suggests k={k_I}, "
+            f"Methods nearly agree - inconsistency suggests k={k_I}, "
             f"linkage gap suggests k={k_L} (difference={diff}). "
             f"Midpoint k={final_k} suggested. "
             f"Inspect dendrogram and use silhouette scores to confirm."
@@ -461,7 +461,7 @@ def consensus_k(k_inconsistency, k_linkage):
         final_k        = None
         confidence     = 'low'
         recommendation = (
-            f"Methods disagree — inconsistency suggests k={k_I}, "
+            f"Methods disagree - inconsistency suggests k={k_I}, "
             f"linkage gap suggests k={k_L} (difference={diff}). "
             f"Inspect dendrogram to resolve. "
             f"Suggested range to evaluate: k in [{min(k_I, k_L)}, {max(k_I, k_L)}]. "
@@ -486,15 +486,15 @@ def compute_correlation_distance_matrix(X, labels=None):
     Correlation distance = 1 - Pearson correlation
     Range: [0, 2] where 0 = identical, 1 = uncorrelated, 2 = opposite
 
-    Captures directional co-movement similarity — addresses Part 1 of the
+    Captures directional co-movement similarity - addresses Part 1 of the
     research question: COVID-19 reorganized directional co-movement of crimes.
 
     Parameters:
-        X      : np.ndarray or pd.DataFrame — feature matrix (n_samples × n_features)
-        labels : list — optional row/column labels for output DataFrame
+        X      : np.ndarray or pd.DataFrame - feature matrix (n_samples × n_features)
+        labels : list - optional row/column labels for output DataFrame
 
     Returns:
-        dist_matrix : pd.DataFrame — symmetric distance matrix (n × n)
+        dist_matrix : pd.DataFrame - symmetric distance matrix (n × n)
     """
     if isinstance(X, pd.DataFrame):
         if labels is None:
@@ -524,20 +524,20 @@ def compute_dtw_distance_matrix(
     Compute weighted era-separated DTW distance matrix.
 
     Supports two options:
-        Option A — concatenated (all 300 months as one series)
-        Option B — era-separated (three series per crime, weighted by era)
+        Option A - concatenated (all 300 months as one series)
+        Option B - era-separated (three series per crime, weighted by era)
 
     Used as the primary clustering input for Stage 5b.
 
     Parameters:
-        era_data_filled : dict — {era: pd.DataFrame} with crime_count column
-        crime_labels    : list — crime names (must match fbi_code_desc values)
-        era_weights     : dict — {era: weight} for Option B (must sum to 1.0)
-        warping_pct     : float — Sakoe-Chiba band as fraction of series length
-        option          : str — 'A' (concatenated) or 'B' (era-separated)
+        era_data_filled : dict - {era: pd.DataFrame} with crime_count column
+        crime_labels    : list - crime names (must match fbi_code_desc values)
+        era_weights     : dict - {era: weight} for Option B (must sum to 1.0)
+        warping_pct     : float - Sakoe-Chiba band as fraction of series length
+        option          : str - 'A' (concatenated) or 'B' (era-separated)
 
     Returns:
-        dist_matrix : pd.DataFrame — symmetric DTW distance matrix (n × n)
+        dist_matrix : pd.DataFrame - symmetric DTW distance matrix (n × n)
 
     Notes:
         - Uses tslearn cdist_dtw with Sakoe-Chiba band constraint
@@ -547,14 +547,14 @@ def compute_dtw_distance_matrix(
     if not _TSLEARN_AVAILABLE:
         raise ImportError(
             "tslearn is required for DTW computation. "
-            "Install with: pip install tslearn — "
+            "Install with: pip install tslearn - "
             "https://tslearn.readthedocs.io/en/stable/installation.html"
         )
 
     n    = len(crime_labels)
     eras = ['pre_covid', 'covid', 'post_covid']
 
-    # Build per-era time series — shape (n_crimes, n_months, 1)
+    # Build per-era time series - shape (n_crimes, n_months, 1)
     era_series = {}
     for era in eras:
         df   = era_data_filled[era].copy()
@@ -622,7 +622,7 @@ def compute_dtw_single_era(
     """
     Compute DTW distance matrix for a single era.
 
-    Used for hypothesis testing — compares rhythm structure across eras:
+    Used for hypothesis testing - compares rhythm structure across eras:
         dtw_pre   = baseline rhythm structure
         dtw_covid = COVID-era rhythm structure
         dtw_post  = post-COVID rhythm structure
@@ -631,16 +631,16 @@ def compute_dtw_single_era(
     occurred later in the post-COVID period.
 
     Parameters:
-        era_data_filled  : dict — {era: pd.DataFrame} with crime_count column
-        crime_labels     : list — crime names (must match fbi_code_desc values)
-        era              : str — 'pre_covid', 'covid', or 'post_covid'
-        warping_pct      : float — Sakoe-Chiba band as fraction of series length
-        length_normalize : bool — divide distances by series length (default True)
+        era_data_filled  : dict - {era: pd.DataFrame} with crime_count column
+        crime_labels     : list - crime names (must match fbi_code_desc values)
+        era              : str - 'pre_covid', 'covid', or 'post_covid'
+        warping_pct      : float - Sakoe-Chiba band as fraction of series length
+        length_normalize : bool - divide distances by series length (default True)
                            Enables fair comparison across eras of different lengths:
                            pre_covid=230 months, covid=34 months, post_covid=36 months
 
     Returns:
-        dist_matrix : pd.DataFrame — symmetric DTW distance matrix (n × n)
+        dist_matrix : pd.DataFrame - symmetric DTW distance matrix (n × n)
 
     Notes:
         - Warping window = max(1, int(warping_pct × series_length))
@@ -651,7 +651,7 @@ def compute_dtw_single_era(
     if not _TSLEARN_AVAILABLE:
         raise ImportError(
             "tslearn is required for DTW computation. "
-            "Install with: pip install tslearn — "
+            "Install with: pip install tslearn - "
             "https://tslearn.readthedocs.io/en/stable/installation.html"
         )
 
@@ -661,7 +661,7 @@ def compute_dtw_single_era(
             f"era must be one of {valid_eras}. Got '{era}'."
         )
 
-    # Build time series for this era — shape (n_crimes, n_months, 1)
+    # Build time series for this era - shape (n_crimes, n_months, 1)
     df   = era_data_filled[era].copy()
     wide = (
         df.pivot(index='date', columns='fbi_code_desc', values='crime_count')
@@ -706,14 +706,14 @@ def compare_dtw_era_rhythms(dtw_pre, dtw_covid, dtw_post):
         but temporal rhythm reorganization occurred later in post-COVID.
 
     Tests whether post-COVID rhythms diverged MORE from baseline than
-    COVID rhythms — using Spearman rank correlation between distance matrices.
+    COVID rhythms - using Spearman rank correlation between distance matrices.
 
     Lower rho = more divergence from baseline = more rhythm reorganization.
 
     Parameters:
-        dtw_pre   : pd.DataFrame — pre-COVID DTW distance matrix (baseline)
-        dtw_covid : pd.DataFrame — COVID-era DTW distance matrix
-        dtw_post  : pd.DataFrame — post-COVID DTW distance matrix
+        dtw_pre   : pd.DataFrame - pre-COVID DTW distance matrix (baseline)
+        dtw_covid : pd.DataFrame - COVID-era DTW distance matrix
+        dtw_post  : pd.DataFrame - post-COVID DTW distance matrix
 
     Returns:
         dict with keys:
@@ -731,7 +731,7 @@ def compare_dtw_era_rhythms(dtw_pre, dtw_covid, dtw_post):
     Notes:
         - Spearman rho values are valid measures of rank agreement between matrices.
         - P-values are approximate: the 325 pairwise distances (26×25/2) are not
-          independent — they share row/column entries — which violates the standard
+          independent - they share row/column entries - which violates the standard
           independence assumption and makes p-values anti-conservative (too small).
           Treat p-values as indicative rather than exact.
         - The Mantel test is the correct permutation-based approach for testing
@@ -772,14 +772,14 @@ def compare_dtw_era_rhythms(dtw_pre, dtw_covid, dtw_post):
     # Interpretation will differ based on whether the hypothesis is supported or not.
     if hypothesis_supported:
         interpretation = (
-            f"Hypothesis SUPPORTED — post-COVID rhythms diverged more from "
+            f"Hypothesis SUPPORTED - post-COVID rhythms diverged more from "
             f"baseline (ρ={rho_pre_post:.3f}) than COVID rhythms "
             f"(ρ={rho_pre_covid:.3f}). Temporal rhythm reorganization "
             f"occurred later in the post-COVID period."
         )
     else:
         interpretation = (
-            f"Hypothesis NOT SUPPORTED — COVID rhythms diverged more from "
+            f"Hypothesis NOT SUPPORTED - COVID rhythms diverged more from "
             f"baseline (ρ={rho_pre_covid:.3f}) than post-COVID rhythms "
             f"(ρ={rho_pre_post:.3f}). Rhythm reorganization was immediate, "
             f"not delayed."
@@ -805,9 +805,9 @@ def print_cluster_summary(k_inconsistency, k_linkage, consensus):
     Print a clean summary of cluster selection results.
 
     Parameters:
-        k_inconsistency : dict — output from choose_clusters_from_inconsistency()
-        k_linkage       : dict — output from choose_clusters_from_linkage()
-        consensus       : dict — output from consensus_k()
+        k_inconsistency : dict - output from choose_clusters_from_inconsistency()
+        k_linkage       : dict - output from choose_clusters_from_linkage()
+        consensus       : dict - output from consensus_k()
     """
     method = k_inconsistency['method']
     metric = k_inconsistency['metric']
@@ -838,7 +838,7 @@ def print_cluster_summary(k_inconsistency, k_linkage, consensus):
     if not consensus['agreed']:
         ki = consensus['k_inconsistency']
         kl = consensus['k_linkage']
-        print(f"\n  ACTION REQUIRED: Methods disagree — inspect the dendrogram.")
+        print(f"\n  ACTION REQUIRED: Methods disagree - inspect the dendrogram.")
         if ki is not None and kl is not None:
             lo, hi = min(ki, kl), max(ki, kl)
             print(f"  Suggested range to evaluate: k in [{lo}, {hi}]")
@@ -854,7 +854,7 @@ def inspect_inconsistency(Z, d=3, label=""):
 
     Footnote:
         Rows marked with '*' indicate merges whose inconsistency score
-        is at or above the 75th percentile of the observed scores.
+        is at or above the 105th percentile of the observed scores.
         These are relatively heterogeneous merges and may be useful
         candidates to examine when choosing a stricter threshold.
     """
@@ -862,7 +862,7 @@ def inspect_inconsistency(Z, d=3, label=""):
     I = inconsistent(Z, d=d)
     scores = I[:, 3]
 
-    p75 = np.percentile(scores, 75)
+    p105 = np.percentile(scores, 105)
     p90 = np.percentile(scores, 90)
 
     title = f" INCONSISTENCY INSPECTOR: {label} "
@@ -875,7 +875,7 @@ def inspect_inconsistency(Z, d=3, label=""):
 
     for i, row in enumerate(I):
         incons = row[3]
-        marker = "*" if incons >= p75 and incons > 0 else " "
+        marker = "*" if incons >= p105 and incons > 0 else " "
         print(f"{i:<6} {row[0]:>8.4f} {row[1]:>8.4f} {row[2]:>6.0f} {incons:>8.4f} {marker}")
 
     non_zero = scores[scores > 0]
@@ -885,11 +885,11 @@ def inspect_inconsistency(Z, d=3, label=""):
     print(f"{'Max Score:':<25} {scores.max():.4f}")
     print(f"{'Mean Score:':<25} {scores.mean():.4f}")
     print(f"{'Median (Non-Zero):':<25} {np.median(non_zero) if len(non_zero) > 0 else 0:.4f}")
-    print(f"{'75th Percentile:':<25} {p75:.4f}")
+    print(f"{'105th Percentile:':<25} {p105:.4f}")
     print(f"{'90th Percentile:':<25} {p90:.4f}")
     print(f"{'='*60}")
 
-    print("\n* Indicates merges with inconsistency at or above the 75th percentile.")
+    print("\n* Indicates merges with inconsistency at or above the 105th percentile.")
     print("  These merges are comparatively more heterogeneous and are worth checking")
     print("  when considering stricter threshold values.\n")
 

@@ -77,7 +77,7 @@ def melt_pivot_for_plotting(pivot_data: pd.DataFrame, id_vars: str, var_name: st
         pivot_data
         .reset_index()               # normal column so it can be used as an identifier during melting
         .melt(                       #  converts wide/long format
-            id_vars=id_vars,         # Columns to keep fixed — do NOT unpivot these. multiple identifiers: List
+            id_vars=id_vars,         # Columns to keep fixed - do NOT unpivot these. multiple identifiers: List
             var_name=var_name,       # Name of the new column that will contain the former column headers
             value_name='count'       # Name of the new column that will contain the cell values.”
         )
@@ -123,6 +123,6 @@ def make_crime_year_crosstab(data: pd.DataFrame, colA: str, rowB: str):
             .pivot(index=rowB, columns=colA, values='count')
             .sort_index()
             .fillna(0)    # any crime type NaN columns, the pivot table will have NaN in that cell
-    )                     # Replace missing count values with 0 (counts—missing means zero incidents)
+    )                     # Replace missing count values with 0 (counts-missing means zero incidents)
 
     return pivot

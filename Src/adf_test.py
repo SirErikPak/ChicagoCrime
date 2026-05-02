@@ -12,12 +12,12 @@ def _is_adf_eligible(row) -> bool:
     'garbage-in-garbage-out' statistical results.
 
     Gates applied in order (fail-fast):
-        1. months        >= _ELIGIBILITY_MIN_MONTHS      — sufficient time-series length
-        2. presence_rate >= _ELIGIBILITY_MIN_PRESENCE    — series not too sparse
-        3. mean          >= _ELIGIBILITY_MIN_MEAN        — non-trivial signal (also guards cv DivByZero)
-        4. cv            <  _ELIGIBILITY_MAX_CV          — not excessively volatile
-        5. n_unique      >= _ELIGIBILITY_MIN_UNIQUE      — not a near-constant series
-        6. max/mean      <  _ELIGIBILITY_MAX_SPIKE_RATIO — no single outlier dominating signal
+        1. months        >= _ELIGIBILITY_MIN_MONTHS      - sufficient time-series length
+        2. presence_rate >= _ELIGIBILITY_MIN_PRESENCE    - series not too sparse
+        3. mean          >= _ELIGIBILITY_MIN_MEAN        - non-trivial signal (also guards cv DivByZero)
+        4. cv            <  _ELIGIBILITY_MAX_CV          - not excessively volatile
+        5. n_unique      >= _ELIGIBILITY_MIN_UNIQUE      - not a near-constant series
+        6. max/mean      <  _ELIGIBILITY_MAX_SPIKE_RATIO - no single outlier dominating signal
 
     Args:
         row: pd.Series with columns:
@@ -27,30 +27,30 @@ def _is_adf_eligible(row) -> bool:
         bool: True if series is eligible for ADF testing, False otherwise.
     """
 
-    # Gate 1: Structural — Duration
+    # Gate 1: Structural - Duration
     if row["months"] < config_time_series.CONFIG["_ELIGIBILITY_MIN_MONTHS"]:
         return False
 
-    # Gate 2: Structural — Density
+    # Gate 2: Structural - Density
     if row["presence_rate"] < config_time_series.CONFIG["_ELIGIBILITY_MIN_PRESENCE"]:
         return False
 
-    # Gate 3: Signal Quality — Mean
+    # Gate 3: Signal Quality - Mean
     # NOTE: Must come before gates 4 and 6.
-    # If mean == 0, cv = std/mean = inf and max/mean = inf — both undefined.
+    # If mean == 0, cv = std/mean = inf and max/mean = inf - both undefined.
     # Passing mean >= MIN_MEAN guarantees mean > 0 for all downstream math.
     if row["mean"] < config_time_series.CONFIG["_ELIGIBILITY_MIN_MEAN"]:
         return False
 
-    # Gate 4: Variability — CV (noise ceiling)
+    # Gate 4: Variability - CV (noise ceiling)
     if row["cv"] > config_time_series.CONFIG["_ELIGIBILITY_MAX_CV"]:
         return False
 
-    # Gate 5: Variability — Unique values (near-constant series)
+    # Gate 5: Variability - Unique values (near-constant series)
     if row["n_unique"] < config_time_series.CONFIG["_ELIGIBILITY_MIN_UNIQUE"]:
         return False
 
-    # Gate 6: Outlier / Concentration — Spike Ratio
+    # Gate 6: Outlier / Concentration - Spike Ratio
     # mean > 0 is guaranteed by gate 3, so no ZeroDivisionError possible here.
     max_to_mean = row["max"] / row["mean"]
     if max_to_mean > config_time_series.CONFIG["_ELIGIBILITY_MAX_SPIKE_RATIO"]:

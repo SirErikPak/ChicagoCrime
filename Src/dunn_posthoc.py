@@ -63,7 +63,7 @@ def _effect_label(r: float) -> str:
         return 'large'
 
 
-# ── Dunn's Test (manual — no scikit-posthocs dependency) ─────────────────────
+# ── Dunn's Test (manual - no scikit-posthocs dependency) ─────────────────────
 def _dunn_pvalue(group_a: np.ndarray, group_b: np.ndarray,
                  all_values: np.ndarray) -> float:
     """
@@ -115,9 +115,9 @@ def run_dunn_posthoc(
 
     Parameters
     ----------
-    data            : multi_counts_df — must contain fbi_code_desc, era, count
+    data            : multi_counts_df - must contain fbi_code_desc, era, count
     time_col        : aggregation column used in kruskal step (e.g. 'year_month')
-    kruskal_results : output of kruskal_fdr.run_kruskal_fdr() — used to filter
+    kruskal_results : output of kruskal_fdr.run_kruskal_fdr() - used to filter
                       to significant crimes only
     alpha           : FDR significance threshold (default 0.05)
 

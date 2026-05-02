@@ -545,8 +545,10 @@ def plot_crime_counts(
     if column not in pivot:
         raise KeyError(f"Column '{column}' not found in esp_results['pivot_data'].")
 
-    # Build a flat pandas Series (index reset) representing the raw time series
-    series = pd.Series(pivot[column]).reset_index(drop=True)
+    # Build a flat pandas Series (keep original index for year-month labels)
+    series_with_index = pd.Series(pivot[column])
+    date_index = series_with_index.index
+    series = series_with_index.reset_index(drop=True)
 
     # Summary counts: total, zeros, and non-zero mask
     n_total = len(series)
@@ -570,15 +572,27 @@ def plot_crime_counts(
     # Top subplot: raw counts over time with a horizontal zero reference
     axes[0].plot(series.values, color="steelblue", linewidth=0.8)
     axes[0].axhline(0, color="red", linewidth=0.5, linestyle="--")
-    axes[0].set_title(f"{column} — Raw Counts Across {n_total} Months")
-    axes[0].set_xlabel("Month Index")
+    axes[0].set_title(f"{column} - Raw Counts Across {n_total} Months")
+    axes[0].set_xlabel("Year-Month")
     axes[0].set_ylabel("Count")
     axes[0].set_xlim(0, max(0, n_total - 1))
+    
+    # Set x-axis ticks with year-month labels (yyyy-mm format)
+    tick_positions = np.linspace(0, n_total - 1, min(12, n_total), dtype=int)
+    tick_labels = []
+    for i in tick_positions:
+        date_val = date_index[i]
+        if hasattr(date_val, 'strftime'):
+            tick_labels.append(date_val.strftime('%Y-%m'))
+        else:
+            tick_labels.append(str(date_val)[:7])
+    axes[0].set_xticks(tick_positions)
+    axes[0].set_xticklabels(tick_labels, rotation=45, ha='right')
 
     # Annotate number of zero months in the plot area (visible summary)
     axes[0].text(
         0.01,
-        0.95,
+        0.105,
         f"Zero months: {n_zeros} / {n_total}",
         transform=axes[0].transAxes,
         fontsize=10,
@@ -588,14 +602,14 @@ def plot_crime_counts(
 
     # Bottom subplot: histogram of the observed (positive) counts only
     axes[1].hist(nonzero.values, bins=bins, color="steelblue", edgecolor="white")
-    axes[1].set_title(f"{column} — Distribution of Non-Zero Counts")
+    axes[1].set_title(f"{column} - Distribution of Non-Zero Counts")
     axes[1].set_xlabel("Count")
     axes[1].set_ylabel("Frequency")
 
     # Summary annotation on the histogram: show non-zero sample size and mean
     axes[1].text(
         0.99,
-        0.95,
+        0.105,
         f"Non-zero months: {len(nonzero)}\nMean: {stats['mean_nonzero']:.1f}" if stats["mean_nonzero"] is not None else "No non-zero months",
         transform=axes[1].transAxes,
         fontsize=10,

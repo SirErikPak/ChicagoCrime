@@ -15,9 +15,9 @@ def _calc_stl_strength(resid: np.ndarray, component: np.ndarray, tol: float) -> 
 
     Parameters
     ----------
-    resid     : np.ndarray — STL residuals
-    component : np.ndarray — seasonal or trend component
-    tol       : float      — numerical zero threshold from config
+    resid     : np.ndarray - STL residuals
+    component : np.ndarray - seasonal or trend component
+    tol       : float      - numerical zero threshold from config
 
     Returns
     -------

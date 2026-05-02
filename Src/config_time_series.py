@@ -38,7 +38,7 @@ Global Constants:
     are too volatile to analyze effectively.
 - _ELIGIBILITY_MIN_UNIQUE: The minimum number of unique monthly counts for a crime type to be eligible for analysis. This helps to filter out crime types 
     that are too constant or near-constant to analyze effectively.
-- _ELIGIBILITY_MAX_SPIKE_RATIO: acts as an outlier filter. It is designed to catch time series that are dominated by a single, extreme event—often referred 
+- _ELIGIBILITY_MAX_SPIKE_RATIO: acts as an outlier filter. It is designed to catch time series that are dominated by a single, extreme event-often referred 
     to as a "pulse" or a "shock", which can mathematically "blind" the ADF test to the underlying trend of the data. The ratio is calculated as the maximum 
     value in the series divided by the mean. If this ratio exceeds a certain threshold (e.g., 10), it suggests that the series has a significant spike 
     relative to its average level, which can distort the ADF test results and lead to misleading conclusions about stationarity. By setting this threshold, 

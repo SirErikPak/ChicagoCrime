@@ -45,7 +45,7 @@ chicago_communities = {
     "56": "Garfield Ridge", "57": "Archer Heights", "58": "Brighton Park", "59": "McKinley Park", "60": "Bridgeport",
     "61": "New City", "62": "West Elsdon", "63": "Gage Park", "64": "Clearing", "65": "West Lawn",
     "66": "Chicago Lawn", "67": "West Englewood", "68": "Englewood", "69": "Greater Grand Crossing", "70": "Ashburn",
-    "71": "Auburn Gresham", "72": "Beverly", "73": "Washington Heights", "74": "Mount Greenwood", "75": "Morgan Park",
+    "71": "Auburn Gresham", "72": "Beverly", "73": "Washington Heights", "74": "Mount Greenwood", "105": "Morgan Park",
     "76": "Ohare", "77": "Edgewater"
 }
 
