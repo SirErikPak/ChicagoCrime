@@ -64,6 +64,7 @@ def compute_era_distribution_parameters(eras_dict,
         'Pre-COVID': eras_dict['pre_covid'],
         'COVID': eras_dict['covid'],
         'Post-COVID': eras_dict['post_covid']
+
     }
 
     # Mean vector per era (central tendency of crime distribution in CLR space)
@@ -78,26 +79,27 @@ def compute_era_distribution_parameters(eras_dict,
     # Differences between eras (magnitude of distributional shifts)
     era_means["Pre_minus_COVID"] = (era_means["Pre-COVID"] - era_means["COVID"])
     era_means["COVID_minus_Post"] = (era_means["COVID"] - era_means["Post-COVID"])
+    era_means["Pre_minus_Post"] = (era_means["Pre-COVID"] - era_means["Post-COVID"]) 
     # Note: Std dev differences are less interpretable than mean shifts, but we include them for completeness.
     era_stds["Pre_minus_COVID"] = (era_stds["Pre-COVID"] - era_stds["COVID"])
     era_stds["COVID_minus_Post"] = (era_stds["COVID"] - era_stds["Post-COVID"])
-
+    era_stds["Pre_minus_Post"] = (era_stds["Pre-COVID"] - era_stds["Post-COVID"])
     # --- Print summary ---
-    print("=" * 110)
+    print("=" * 125)
     print("MEAN CLR VECTOR PER ERA (rows=crime type, cols=era & comparisons)")
-    print("=" * 110)
+    print("=" * 125)
     print(era_means.round(4).to_string())
     print()
 
-    print("=" * 110)
+    print("=" * 125)
     print("STD DEV PER ERA")
-    print("=" * 110)
+    print("=" * 125)
     print(era_stds.round(4).to_string())
     print()
 
-    print("=" * 110)
+    print("=" * 70)
     print(f"{'COVARIANCE MATRIX SHAPES':^60}")
-    print("=" * 110)
+    print("=" * 70)
     for name, cov in era_covs.items():
         print(f" {name:<12}: {str(cov.shape):<10} -> expected (26, 26)")
 
@@ -107,7 +109,8 @@ def compute_era_distribution_parameters(eras_dict,
         print(f"TOP {n_rows} MEAN SHIFTS")
         print("=" * 70)
         print("Note: Differences between eras, sorted by Absolute magnitude.")
-        print("Pre-COVID -> COVID and COVID -> Post-COVID are ranked separately.")
+        print("Pre-COVID -> COVID & COVID -> Post-COVID & Pre-COVID -> Post-COVID ")
+        print(f"are ranked separately.")
         print("This highlights which crime types had the largest distributional shifts.")
         print(f"{'-' * 70}\n")
 
@@ -146,12 +149,31 @@ def compute_era_distribution_parameters(eras_dict,
         )
         print(top_covid_post.to_string())
 
+        print()
+
+        # Rank mean shifts Pre-COVID -> Post-COVID
+        print(f"TOP {n_rows} MEAN SHIFTS - Pre-COVID -> Post-COVID")
+        print("=" * 55)
+        top_pre_post = (
+        era_means['Pre_minus_Post']
+        .reindex(
+            era_means['Pre_minus_Post']
+            .abs()
+            .sort_values(ascending=False)
+            .head(n_rows)
+            .index
+        )
+        .round(4)
+        )
+        print(top_pre_post.to_string())
+
     # Volatility shifts (std dev differences) are less interpretable but we include them for completeness
     print("\n" + "=" * 70)
     print(f"TOP {n_rows} VOLATILITY SHIFTS")
     print("=" * 70)
     print("Note: Differences in variance between eras, sorted by absolute magnitude.")
-    print("Pre-COVID -> COVID and COVID -> Post-COVID are ranked separately.")
+    print("Pre-COVID -> COVID & COVID -> Post-COVID & Pre-COVID -> Post-COVID "
+          "are ranked separately.")
     print("This highlights which crime types had the largest volatility shifts.")
     print(f"{'-' * 70}\n")
 
@@ -189,13 +211,30 @@ def compute_era_distribution_parameters(eras_dict,
     )
     print(top_var_covid_post.to_string())
 
+    print()
+
+    # Rank volatility shifts Pre-COVID -> Post-COVID
+    print(f"TOP {n_rows} VOLATILITY SHIFTS - Pre-COVID -> Post-COVID")
+    print("=" * 55)
+    top_var_pre_post = (
+        era_stds['Pre_minus_Post']
+        .reindex(
+            era_stds['Pre_minus_Post']
+            .abs()
+            .sort_values(ascending=False)
+            .head(n_rows)
+            .index
+        )
+        .round(4)
+    )
+    print(top_var_pre_post.to_string())
+
 
     return {
         'era_means': era_means,
         'era_stds': era_stds,
         'era_covs': era_covs
     }
-
 
 # -------------------------------------------------------------------
 # 3. Function to plot heatmaps of mean CLR per era and shifts
@@ -205,7 +244,8 @@ def plot_mean_era_heatmaps(data_dict, save_image=None, verbose=False):
     plot_configs = [
         (['Pre-COVID', 'COVID', 'Post-COVID'], 'Mean CLR per Era', 'CLR Mean'),
         (['Pre_minus_COVID'], 'Mean CLR Shift\nPre-COVID -> COVID', 'Δ CLR'),
-        (['COVID_minus_Post'], 'Mean CLR Shift\nCOVID -> Post-COVID', 'Δ CLR')
+        (['COVID_minus_Post'], 'Mean CLR Shift\nCOVID -> Post-COVID', 'Δ CLR'),
+        (['Pre_minus_Post'], 'Mean CLR Shift\nPre-COVID -> Post-COVID', 'Δ CLR')
     ]
 
     # Sort by absolute Pre_minus_COVID for readability
@@ -222,7 +262,7 @@ def plot_mean_era_heatmaps(data_dict, save_image=None, verbose=False):
     )
     
     # Plotting Loop
-    fig, axes = plt.subplots(1, 3, figsize=(22, 10))
+    fig, axes = plt.subplots(1, 4, figsize=(28, 10))
     
     for ax, (cols, title, label) in zip(axes, plot_configs):
         sns.heatmap(
@@ -254,7 +294,7 @@ def plot_mean_era_heatmaps(data_dict, save_image=None, verbose=False):
     if verbose:
         # Print
         print("\nSorted by |Pre_minus_COVID|:")
-        cols_to_print = ['Pre-COVID', 'COVID', 'Post-COVID', 'Pre_minus_COVID', 'COVID_minus_Post']
+        cols_to_print = ['Pre-COVID', 'COVID', 'Post-COVID', 'Pre_minus_COVID', 'COVID_minus_Post', 'Pre_minus_Post']
         print(era_means_sorted[cols_to_print].round(3).to_string())
 
 
@@ -272,7 +312,7 @@ def plot_std_era_heatmaps(data_dict, save_image=None, verbose=False):
     )
     
     # --- Plot ---
-    fig, axes = plt.subplots(1, 3, figsize=(22, 10))
+    fig, axes = plt.subplots(1, 4, figsize=(28, 10))
     
     # Left: Raw std dev per era
     sns.heatmap(
@@ -291,7 +331,7 @@ def plot_std_era_heatmaps(data_dict, save_image=None, verbose=False):
     axes[0].set_xlabel('')
     axes[0].set_ylabel('')
     
-    # Middle: Pre-COVID -> COVID volatility shift
+    # Middle-left: Pre-COVID -> COVID volatility shift
     sns.heatmap(
         era_stds_sorted[['Pre_minus_COVID']],
         ax=axes[1],
@@ -309,7 +349,7 @@ def plot_std_era_heatmaps(data_dict, save_image=None, verbose=False):
     axes[1].set_xlabel('')
     axes[1].set_ylabel('')
     
-    # Right: COVID -> Post-COVID volatility shift
+    # Middle-right: COVID -> Post-COVID volatility shift
     sns.heatmap(
         era_stds_sorted[['COVID_minus_Post']],
         ax=axes[2],
@@ -327,10 +367,28 @@ def plot_std_era_heatmaps(data_dict, save_image=None, verbose=False):
     axes[2].set_xlabel('')
     axes[2].set_ylabel('')
     
+    # Right: Pre-COVID -> Post-COVID volatility shift
+    sns.heatmap(
+        era_stds_sorted[['Pre_minus_Post']],
+        ax=axes[3],
+        cmap='RdBu_r',
+        center=0,
+        annot=True,
+        fmt='.2f',
+        linewidths=0.4,
+        cbar_kws={'label': 'Δ Std Dev'}
+    )
+    axes[3].set_title(
+        'Volatility Shift\nPre-COVID -> Post-COVID',
+        fontsize=13, fontweight='bold'
+    )
+    axes[3].set_xlabel('')
+    axes[3].set_ylabel('')
+    
     plt.suptitle(
         'CLR Volatility per Era & Shifts - Chicago Crime 2001–2025\n'
         'Sorted by |Pre_minus_COVID| Std Dev',
-        fontsize=14, fontweight='bold', y=1.01
+        fontsize=14, fontweight='bold', y=1.02
     )
     plt.tight_layout()
     if save_image:
@@ -345,7 +403,8 @@ def plot_std_era_heatmaps(data_dict, save_image=None, verbose=False):
             'COVID',
             'Post-COVID',
             'Pre_minus_COVID',
-            'COVID_minus_Post'
+            'COVID_minus_Post',
+            'Pre_minus_Post'
         ]].round(3).to_string())
 
 
@@ -456,7 +515,7 @@ def _print_stationarity_report(df, sparse_cats, zero_rates):
 
     
 def run_stationarity_analysis(clr_df, filled_df, sparse_threshold=0.05, verbose=True):
-    """Public: Orchestrates the stationarity testing suite."""
+    """Orchestrates the stationarity testing suite."""
     
     # Sparse Identification
     zero_rates = filled_df.groupby('fbi_code_desc', observed=True)['crime_count'].apply(lambda x: (x == 0).mean())
@@ -472,11 +531,11 @@ def run_stationarity_analysis(clr_df, filled_df, sparse_threshold=0.05, verbose=
     stat_df = pd.DataFrame(results).set_index('crime')
 
     # 3. BH-FDR Correction (Dense only)
-    dense_mask = ~stat_df['is_sparse']
+    dense_bool_mask = ~stat_df['is_sparse']
     for p_col in ['adf_p', 'za_p']:
         adj_col = p_col + '_adj'
         stat_df[adj_col] = np.nan
-        _, stat_df.loc[dense_mask, adj_col], _, _ = multipletests(stat_df.loc[dense_mask, p_col], method='fdr_bh')
+        _, stat_df.loc[dense_bool_mask, adj_col], _, _ = multipletests(stat_df.loc[dense_bool_mask, p_col], method='fdr_bh')
 
     # Consolidate Conclusions
     concl_cols = ['adf_kpss', 'za_conclusion', 'agreement']
@@ -536,11 +595,11 @@ def _block_bootstrap_logic(x1, x2, block_size, n_bootstrap, seed):
 
 def _print_bootstrap_report(df, title, n1_info, n2_info, block_size, n_bootstrap):
     """Internal: Standardized console output formatter."""
-    print(f"\n{'='*85}")
+    print(f"\n{'='*100}")
     print(f"BLOCK BOOTSTRAP REPORT: {title}")
     print(f"Settings: Block Size={block_size} | Iterations={n_bootstrap:,} | Effect=Hedges' g | Correction=BH-FDR")
     print(f"Samples:  {n1_info[0]} (n={n1_info[1]}) vs {n2_info[0]} (n={n2_info[1]})")
-    print(f"{'='*85}")
+    print(f"{'='*100}")
     
     cols = ['delta_mean', 'hedges_g', 'p_bootstrap', 'p_adj', 'mean_sig']
     print(df[cols].round(4).to_string())
@@ -587,3 +646,281 @@ def run_era_comparison(data, era1_df, era2_df, label1="Era 1", label2="Era 2",
                                 (label2, len(era2_df)), block_size, n_bootstrap)
         
     return res_df
+
+
+
+# ============================================================
+# LAYER 1 - DATA PREPARATION
+# ============================================================
+def _prepare_break_data(clr_df, category, break_date, window):
+    """
+    Extract CLR series and compute break statistics.
+    Uses vectorized bool_masks and pre-computed stats dict.
+    """
+    series   = pd.Series(
+        clr_df[category].values,
+        index=pd.to_datetime(clr_df.index),
+        name=category
+    )
+    break_dt  = pd.Timestamp(break_date)
+
+    # Vectorized bool_masks
+    pre_bool_mask  = series.index <  break_dt
+    post_bool_mask = ~pre_bool_mask
+    pre_vals  = series[pre_bool_mask]
+    post_vals = series[post_bool_mask]
+
+    stats = {
+        'pre_mean'  : pre_vals.mean(),
+        'post_mean' : post_vals.mean(),
+        'shift'     : post_vals.mean() - pre_vals.mean(),
+        'rolling'   : series.rolling(
+                          window=window, center=True
+                      ).mean(),
+        'pre_std'   : pre_vals.std(),
+        'post_std'  : post_vals.std(),
+        'pre_n'     : len(pre_vals),
+        'post_n'    : len(post_vals),
+    }
+
+    return series, break_dt, pre_vals, post_vals, stats
+
+
+# ============================================================
+# LAYER 2 - PLOTTING FUNCTIONS
+# ============================================================
+def _plot_time_series(ax, series, break_dt, stats,
+                      era_config, window, category,
+                      za_stat, za_p_adj, legend_loc='lower left'):
+    """
+    Top panel: CLR time series with era shading,
+    rolling mean, segment means, break line and annotation.
+    """
+    # Era shading
+    for label, (start, end, color) in era_config.items():
+        ax.axvspan(
+            pd.Timestamp(start), pd.Timestamp(end),
+            alpha=0.07, color=color, label=label
+        )
+
+    # Raw CLR series
+    ax.plot(
+        series.index, series.values,
+        color='gray', alpha=0.3,
+        lw=0.8, label='CLR Raw'
+    )
+
+    # Rolling mean
+    ax.plot(
+        stats['rolling'].index,
+        stats['rolling'].values,
+        color='#2c7bb6', lw=2.5,
+        label=f'{window}-month rolling mean'
+    )
+
+    # Vertical break line + dynamic label
+    ax.axvline(
+        break_dt, color='#d62728',
+        lw=2.0, ls='--', alpha=0.8
+    )
+    ax.text(
+        break_dt, ax.get_ylim()[1],
+        f'  ZA Break: {break_dt.strftime("%Y-%m")}',
+        color='#d62728', fontweight='bold',
+        va='top', fontsize=10
+    )
+
+    # Segment means
+    ax.hlines(
+        y=[stats['pre_mean'], stats['post_mean']],
+        xmin=[series.index[0], break_dt],
+        xmax=[break_dt,        series.index[-1]],
+        colors=['#1a9641', '#d7191c'],
+        lw=3.0,
+        label='Segment means'
+    )
+
+    # Mean shift annotation - curved arrow + white bbox
+    mid_y = (stats['pre_mean'] + stats['post_mean']) / 2
+    ax.annotate(
+        f"Mean Shift: {stats['shift']:+.3f}",
+        xy=(break_dt, mid_y),
+        xytext=(pd.Timestamp('2015-01-01'), mid_y + 0.4),
+        arrowprops=dict(
+            arrowstyle='->',
+            connectionstyle='arc3,rad=.2',
+            color='#d62728', lw=1.5
+        ),
+        fontsize=12, fontweight='bold',
+        color='#d62728',
+        bbox=dict(facecolor='white', alpha=0.8)
+    )
+
+    ax.set_title(
+        f'CLR Time Series - {category}',
+        fontsize=14, fontweight='bold'
+    )
+    ax.set_ylabel('CLR Value', fontsize=11)
+    ax.legend(loc=legend_loc, ncol=2, frameon=True)
+    ax.grid(True, which='both', linestyle=':', alpha=0.5)
+
+
+
+# -----------------------------------------------------------
+# 7. Structural Break - Distribution Plotting Function
+# -----------------------------------------------------------
+def _plot_distribution(ax, pre_vals, post_vals,
+                       stats, break_date, legend_loc='lower left'):
+    """
+    Bottom panel: Density distributions before and after
+    the structural break with KDE and mean markers.
+    """
+    # Histogram + KDE
+    sns.histplot(
+        pre_vals, bins=30, kde=True,
+        color='#2c7bb6', alpha=0.4,
+        label=f'Pre-break  (n={stats["pre_n"]})',
+        stat='density', ax=ax
+    )
+    sns.histplot(
+        post_vals, bins=30, kde=True,
+        color='#d62728', alpha=0.4,
+        label=f'Post-break (n={stats["post_n"]})',
+        stat='density', ax=ax
+    )
+
+    # Mean markers
+    ax.axvline(
+        stats['pre_mean'],  color='#2c7bb6',
+        ls='--', lw=2.0,
+        label=f'Pre mean:  {stats["pre_mean"]:.3f}'
+    )
+    ax.axvline(
+        stats['post_mean'], color='#d62728',
+        ls='--', lw=2.0,
+        label=f'Post mean: {stats["post_mean"]:.3f}'
+    )
+
+    ax.set_title(
+        f'CLR Density - Before vs After Break '
+        f'({pd.Timestamp(break_date).strftime("%Y-%m")})',
+        fontsize=13, fontweight='bold'
+    )
+    ax.set_xlabel('CLR Value', fontsize=11)
+    ax.set_ylabel('Density',   fontsize=11)
+    ax.legend(loc=legend_loc, fontsize=9)
+    ax.grid(True, which='both', linestyle=':', alpha=0.5)
+
+
+# ============================================================
+# LAYER 3 - VERBOSE OUTPUT
+# ============================================================
+def _print_break_summary(category, break_date,
+                          pre_vals, post_vals,
+                          stats, za_stat, za_p_adj):
+    """
+    Print segment statistics using pd.describe()
+    for clean DataFrame alignment.
+    """
+    summary = pd.DataFrame({
+        'Pre-Break' : pre_vals.describe(),
+        'Post-Break': post_vals.describe()
+    })
+
+    print("=" * 65)
+    print(f"STRUCTURAL BREAK ANALYSIS - {category}")
+    print(f"Break point : {pd.Timestamp(break_date).strftime('%Y-%m')}")
+    print(f"ZA statistic: {za_stat:.6f}")
+    print(f"za_p_adj    : {za_p_adj:.6f}  (below α=0.05 ✅)")
+    print(f"Conclusion  : Stationary around break")
+    print("=" * 65)
+
+    print("\nSEGMENT STATISTICS:")
+    print(
+        summary.T[['count','mean','std','min','max']]
+        .round(4)
+        .to_string()
+    )
+
+    print(f"\nMean shift at break : {stats['shift']:+.4f}")
+    print(
+        f"Pre-break  std      : {stats['pre_std']:.4f}"
+    )
+    print(
+        f"Post-break std      : {stats['post_std']:.4f}"
+    )
+
+
+# ============================================================
+# LAYER 4 - EXECUTION INTERFACE
+# ============================================================
+def plot_structural_break(clr_df, category, break_date,
+                           era_config=None, window=None,
+                           za_stat=None,
+                           za_p_adj=None,
+                           save_path=None,
+                           verbose=True,
+                           legend_loc='lower left'):
+    """
+    Full structural break diagnostic pipeline.
+
+    Parameters:
+    -----------
+    clr_df      : CLR DataFrame (T=300, K=26)
+    category    : crime category column name
+    break_date  : ZA-identified break date (YYYY-MM-DD)
+    era_config  : dict of era label → (start, end, color)
+    window      : rolling mean window in months
+    za_stat     : Zivot-Andrews test statistic
+    za_p_adj    : BH-FDR adjusted ZA p-value
+    save_path   : output file path
+    verbose     : print segment statistics
+    legend_loc  : legend position, default 'lower left'
+    """
+    # Step 1 - Prepare data
+    series, break_dt, pre_vals, post_vals, stats = \
+        _prepare_break_data(
+            clr_df, category, break_date, window
+        )
+
+    # Step 2 - Build figure
+    fig, (ax_ts, ax_dist) = plt.subplots(
+        2, 1, figsize=(16, 12),
+        gridspec_kw={'height_ratios': [1.2, 0.8]}
+    )
+
+    # Step 3 - Time series panel
+    _plot_time_series(
+        ax_ts, series, break_dt, stats,
+        era_config, window, category,
+        za_stat, za_p_adj, legend_loc
+    )
+
+    # Step 4 - Distribution panel
+    _plot_distribution(
+        ax_dist, pre_vals, post_vals,
+        stats, break_date, legend_loc
+    )
+
+    # Step 5 - Suptitle
+    plt.suptitle(
+        f'Structural Break Diagnostics - {category}\n'
+        f'ZA Statistic: {za_stat:.3f}  |  '
+        f'Adj p-value: {za_p_adj:.4f}  |  '
+        f'Break: {pd.Timestamp(break_date).strftime("%Y-%m")}',
+        fontsize=14, fontweight='bold', y=0.98
+    )
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+    if save_path:
+        plt.savefig(f"{save_path}structural_break.png", dpi=300, bbox_inches='tight'
+        )
+    plt.show()
+
+    # Step 6 - Verbose output
+    if verbose:
+        _print_break_summary(
+            category, break_date,
+            pre_vals, post_vals,
+            stats, za_stat, za_p_adj
+        )

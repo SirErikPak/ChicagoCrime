@@ -91,9 +91,9 @@ def sweep_epsilon_grid(
 
     T, K = pivot.shape
     n_zero_cells = int((pivot == 0).sum().sum())
-    # baseline mask of exact zeros before smoothing; used to measure contribution
+    # baseline bool_mask of exact zeros before smoothing; used to measure contribution
     # of original zeros to CLR variance as eps grows.
-    zero_mask_pre = (pivot == 0).values
+    zero_bool_mask_pre = (pivot == 0).values
 
     diagnostics: list[dict[str, Any]] = []
     clr_dict: dict[float, pd.DataFrame] = {}
@@ -107,14 +107,14 @@ def sweep_epsilon_grid(
         abs_clr = np.abs(clr.values)
 
         clr_var_total = float(np.var(abs_clr))
-        clr_var_zeros = float(np.var(abs_clr[zero_mask_pre])) if zero_mask_pre.any() else 0.0
+        clr_var_zeros = float(np.var(abs_clr[zero_bool_mask_pre])) if zero_bool_mask_pre.any() else 0.0
 
         # optional per-eps near-zero diagnostics
         if near_zero_threshold is not None:
             thresh = float(near_zero_threshold)
-            near_mask = (props.values < thresh)
-            pct_cells_near_zero = float(near_mask.mean()) * 100.0
-            clr_var_near_zero = float(np.var(abs_clr[near_mask])) if near_mask.any() else 0.0
+            near_bool_mask = (props.values < thresh)
+            pct_cells_near_zero = float(near_bool_mask.mean()) * 100.0
+            clr_var_near_zero = float(np.var(abs_clr[near_bool_mask])) if near_bool_mask.any() else 0.0
         else:
             pct_cells_near_zero = None
             clr_var_near_zero = None
@@ -278,12 +278,12 @@ def _select_eps(data_df: pd.DataFrame, kendall_threshold: float, spearman_thresh
     c2 = data_df["rank_stability_kendall"] >= kendall_threshold
     c2_relaxed = data_df["rank_stability_spearman"] >= spearman_threshold
 
-    for mask, reason, detail in [
+    for bool_mask, reason, detail in [
         (c1 & c2, "optimal", f"C1+C2 satisfied (kendall>={kendall_threshold})"),
         (c1 & c2_relaxed, "suboptimal_kendall_relaxed", f"C1 satisfied; C2 relaxed to spearman>={spearman_threshold}"),
         (c1, "suboptimal_rank_saturated", "C1 satisfied; C2 unachievable - rank stability saturated"),
     ]:
-        candidates = data_df[mask]
+        candidates = data_df[bool_mask]
         if not candidates.empty:
             chosen = float(candidates.index.min())
             dominated = [e for e in candidates.index if e > chosen]

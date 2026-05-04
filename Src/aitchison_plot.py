@@ -11,6 +11,7 @@ and axis objects for downstream saving or embedding in notebooks.
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from typing import Mapping
 
 
 # ---------------------------------------------------------------------------
@@ -46,13 +47,14 @@ def _safe_metrics(X: np.ndarray) -> tuple[float, float]:
 # ---------------------------------------------------------------------------
 # Computation
 # ---------------------------------------------------------------------------
-def _compute_variance_profile(clr_dict: dict[float, pd.DataFrame]) -> pd.DataFrame:
+def _compute_variance_profile(clr_data: Mapping[float, pd.DataFrame]) -> pd.DataFrame:
     """
     Compute total Aitchison variance and PC1 variance ratio for each epsilon.
 
     Parameters
     ----------
-    clr_dict : dict mapping eps (float) -> CLR DataFrame
+    clr_data : Mapping[float, pd.DataFrame]
+        Mapping from epsilon to CLR-transformed DataFrames.
 
     Returns
     -------
@@ -60,14 +62,14 @@ def _compute_variance_profile(clr_dict: dict[float, pd.DataFrame]) -> pd.DataFra
         Float-indexed by eps, columns: total_variance, pc1_variance_ratio.
         Index is guaranteed to be sorted float.
     """
-    if not clr_dict:
-        raise ValueError("clr_dict is empty.")
+    if clr_data is None or len(clr_data) == 0:
+        raise ValueError("clr_data is empty.")
 
     records = []
-    for eps in sorted(clr_dict):
-        df = clr_dict[eps]
+    for eps in sorted(clr_data):
+        df = clr_data[eps]
         if not isinstance(df, pd.DataFrame):
-            raise TypeError(f"clr_dict[{eps}] must be a DataFrame, got {type(df)}.")
+            raise TypeError(f"clr_data[{eps}] must be a DataFrame, got {type(df)}.")
         # Work on raw numpy values to avoid pandas overhead in the hot loop.
         # Cast to float to ensure numeric stability for SVD / variance ops.
         total_var, pc1_ratio = _safe_metrics(df.values.astype(float))
@@ -156,7 +158,7 @@ def _plot_chosen_line(ax: plt.Axes, chosen_eps: float) -> plt.Line2D:
 # 1. Main plotting function
 # ---------------------------------------------------------------------------
 def plot_aitchison(
-    clr_dict: dict[float, pd.DataFrame],
+    clr_data: Mapping[float, pd.DataFrame],
     chosen_eps: float | None = None,
     annotate: bool = True,
     figsize: tuple[float, float] = (10, 5),
@@ -166,16 +168,17 @@ def plot_aitchison(
 
     Parameters
     ----------
-    clr_dict   : dict mapping eps -> CLR DataFrame
+    clr_data   : Mapping[float, pd.DataFrame]
+        Mapping from epsilon to CLR-transformed DataFrames.
     chosen_eps : if provided, mark with a vertical line and optional annotation
     annotate   : if True and chosen_eps is set, annotate metrics at that point
 
     Returns
     -------
-    tuple[Figure, plt.Axes, plt.Axes]
-        The figure and both axes objects so callers can further customize or save.
+    dict
+        Dictionary with keys ``figure``, ``ax1``, and ``ax2``.
     """
-    profile = _compute_variance_profile(clr_dict)
+    profile = _compute_variance_profile(clr_data)
 
     fig, ax1 = plt.subplots(figsize=figsize)
     ax2 = ax1.twinx()
@@ -200,7 +203,7 @@ def plot_aitchison(
 # 2. PC1 loadings plot
 # ---------------------------------------------------------------------------
 def plot_pc1_loadings(
-    clr_dict: dict[float, pd.DataFrame],
+    clr_data: pd.DataFrame,
     chosen_eps: float,
     figsize: tuple[float, float] = (10, 8),
     label_fmt: str = "%.3f",
@@ -209,10 +212,10 @@ def plot_pc1_loadings(
 
     Parameters
     ----------
-    clr_dict : dict[float, pd.DataFrame]
-        Mapping from epsilon to CLR-transformed DataFrame (T × K).
+    clr_data : pd.DataFrame
+        The CLR-transformed DataFrame (T × K).
     chosen_eps : float
-        The epsilon value to visualize; must be present in ``clr_dict``.
+        The epsilon value to visualize and report in the plot title.
     figsize : tuple, optional
         Figure size in inches.
     label_fmt : str, optional
@@ -225,18 +228,12 @@ def plot_pc1_loadings(
 
     Raises
     ------
-    KeyError
-        If ``chosen_eps`` is not a key in ``clr_dict``.
     ValueError
         If the CLR matrix is degenerate (fewer than 2 rows) or SVD fails.
     """
-    # Validate inputs early and provide helpful errors
-    if chosen_eps not in clr_dict:
-        raise KeyError(f"chosen_eps={chosen_eps} not found in clr_dict keys")
-    clr_df = clr_dict[chosen_eps]
 
     # Convert to numeric numpy array for SVD; assert sufficient rows
-    X = clr_df.to_numpy(dtype=np.float64)
+    X = clr_data.to_numpy(dtype=np.float64)
     if X.shape[0] < 2:
         raise ValueError("Need at least 2 rows to compute PC1 reliably")
     # Center columns (features) before SVD
@@ -254,7 +251,7 @@ def plot_pc1_loadings(
     # coefficient is positive to improve consistency across plots.
     pc1 = Vt[0].copy()
     pc1 *= np.sign(pc1[np.argmax(np.abs(pc1))])
-    pc1_loadings = pd.Series(pc1, index=clr_df.columns, name="pc1_loading").sort_values()
+    pc1_loadings = pd.Series(pc1, index=clr_data.columns, name="pc1_loading").sort_values()
     # Color positive/negative loadings consistently
     bar_colors = np.where(pc1_loadings.values >= 0, "#D85A30", "#185FA5")
     fig, ax = plt.subplots(figsize=figsize)
@@ -295,7 +292,7 @@ def plot_pc1_loadings(
 # 3. PC1 stability plot
 # ---------------------------------------------------------------------------
 def plot_pc1_loading_stability(
-    clr_dict: dict[float, pd.DataFrame],
+    clr_data: Mapping[float, pd.DataFrame],
     chosen_eps: float | None = None,
     top_n: int | None = None,
     figsize: tuple[float, float] = (12, 6),
@@ -307,7 +304,7 @@ def plot_pc1_loading_stability(
 
     Parameters
     ----------
-    clr_dict : dict[float, pd.DataFrame]
+    clr_data : Mapping[float, pd.DataFrame]
         Mapping from epsilon to CLR DataFrames.
     chosen_eps : float | None
         If provided, used as the reference for sign alignment and marked on plot.
@@ -321,15 +318,15 @@ def plot_pc1_loading_stability(
     dict
         Keys: "figure", "axis" for downstream use.
     """
-    if not clr_dict:
-        raise ValueError("clr_dict is empty")
+    if clr_data is None or len(clr_data) == 0:
+        raise ValueError("clr_data is empty")
 
-    eps_values = sorted(clr_dict)
+    eps_values = sorted(clr_data)
     # Choose a reference epsilon for anchor orientation
     ref_eps = chosen_eps if chosen_eps is not None else eps_values[0]
 
     # Build anchored PC1 directions: compute SVD at reference to find anchor index
-    ref_X = clr_dict[ref_eps].values.astype(float)
+    ref_X = clr_data[ref_eps].values.astype(float)
     ref_Xc = ref_X - ref_X.mean(axis=0)
     _, _, Vt_ref = np.linalg.svd(ref_Xc, full_matrices=False)
     anchor_idx = np.argmax(np.abs(Vt_ref[0]))
@@ -337,7 +334,7 @@ def plot_pc1_loading_stability(
     pc1_rows = []
     # Iterate eps values computing PC1 and aligning sign to the reference anchor
     for eps in eps_values:
-        X = clr_dict[eps].values.astype(float)
+        X = clr_data[eps].values.astype(float)
         Xc = X - X.mean(axis=0)
         _, _, Vt = np.linalg.svd(Xc, full_matrices=False)
         # Align sign so that the feature at anchor_idx keeps consistent orientation
@@ -346,7 +343,7 @@ def plot_pc1_loading_stability(
     df_loadings = pd.DataFrame(
         pc1_rows,
         index=eps_values,
-        columns=clr_dict[ref_eps].columns,
+        columns=clr_data[ref_eps].columns,
     )
 
     # Optionally reduce to the most variable features across epsilons

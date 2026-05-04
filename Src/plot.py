@@ -117,7 +117,7 @@ def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
     This function computes the correlation distance (1 - Pearson r) between all
     pairs of rows in the input DataFrame, converts the condensed distance vector
     into a full square distance matrix, and visualizes it as a heatmap. The
-    diagonal is masked because self-distances are always zero and not meaningful
+    diagonal is bool_masked because self-distances are always zero and not meaningful
     for interpretation. A custom green->yellow->red colormap is used to highlight
     low, medium, and high distances on a fixed scale from 0 to 2.
 
@@ -138,7 +138,7 @@ def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
         0 -> perfectly correlated (same shape)
         1 -> uncorrelated
         2 -> perfectly anti-correlated (opposite shape)
-    - The diagonal is masked because each row has distance 0 to itself.
+    - The diagonal is bool_masked because each row has distance 0 to itself.
     - The heatmap uses a fixed color scale (0 to 2) for comparability across runs.
 
     Returns
@@ -157,13 +157,13 @@ def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
     colors = [(0, 1, 0), (1, 1, 0), (1, 0, 0)]  # RGB: green -> yellow -> red
     cmap = LinearSegmentedColormap.from_list('pos_neutral_neg', colors, N=256)
 
-    # diagonal boolean mask - meaningful distances off the diagonal
-    mask = np.eye(dist_matrix.shape[0], dtype=bool)
+    # diagonal boolean bool_mask - meaningful distances off the diagonal
+    bool_mask = np.eye(dist_matrix.shape[0], dtype=bool)
     
     plt.figure(figsize=figsize)
     ax = sns.heatmap(
         dist_matrix,
-        mask=mask,
+        bool_mask=bool_mask,
         xticklabels=data.index,
         yticklabels=data.index,
         cmap=cmap,
@@ -550,7 +550,7 @@ def plot_crime_counts(
     date_index = series_with_index.index
     series = series_with_index.reset_index(drop=True)
 
-    # Summary counts: total, zeros, and non-zero mask
+    # Summary counts: total, zeros, and non-zero bool_mask
     n_total = len(series)
     n_zeros = int((series == 0).sum())
     nonzero = series[series > 0]

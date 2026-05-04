@@ -207,9 +207,9 @@ def extract_rare_events(
     if not ordered_crimes:
         raise ValueError("None of the provided crime_names exist in the data.")
 
-    rare_mask = results_df["fbi_code_desc"].isin(set(ordered_crimes))
+    rare_bool_mask = results_df["fbi_code_desc"].isin(set(ordered_crimes))
     rare_df = results_df.loc[
-        rare_mask, ["fbi_code_desc", "year_month", "crime_count"]
+        rare_bool_mask, ["fbi_code_desc", "year_month", "crime_count"]
     ].copy()
     rare_df["year_month"] = pd.to_datetime(rare_df["year_month"])
     rare_df["present"] = rare_df["crime_count"] > 0
@@ -232,7 +232,7 @@ def extract_rare_events(
         )
         binary_tables[crime] = grp.reindex(months_index).fillna(False)
 
-    df_filtered = results_df.loc[~rare_mask].copy()
+    df_filtered = results_df.loc[~rare_bool_mask].copy()
 
     summary_raw = (
         rare_df.groupby("fbi_code_desc", observed=True)["present"]
