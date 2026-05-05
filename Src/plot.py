@@ -11,8 +11,9 @@ from scatterd import scatterd
 import hierarchy_clustering
 from typing import Tuple
 
-
-# ── 1. Fancy PCA Plot ────────────────────────────────────────────────
+# ---------------------------------------------------------------------
+# 1. Fancy PCA Plot
+# ---------------------------------------------------------------------
 def fancy_pca_plot(
     data: pd.DataFrame,
     pc_scores: np.ndarray,
@@ -108,8 +109,9 @@ def fancy_pca_plot(
 
     return loadings, df_pca
 
-
-# ── 2. Correlation Heatmap ────────────────────────────────────────────────
+# ---------------------------------------------------------------------
+# 2. Correlation Heatmap
+# ---------------------------------------------------------------------
 def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
     """
     Plot a heatmap of pairwise correlation distances between rows of a DataFrame.
@@ -163,7 +165,7 @@ def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
     plt.figure(figsize=figsize)
     ax = sns.heatmap(
         dist_matrix,
-        bool_mask=bool_mask,
+        mask=bool_mask,
         xticklabels=data.index,
         yticklabels=data.index,
         cmap=cmap,
@@ -180,8 +182,9 @@ def correlation_heatmap(data: pd.DataFrame, figsize: tuple=(10,8)) -> None:
     plt.show()
 
 
-
-# ── 3. Hierarchical Clustering Dendrogram ────────────────────────────────────────────────
+# ---------------------------------------------------------------------
+# 3. Hierarchical Clustering Dendrogram 
+# ---------------------------------------------------------------------
 def plot_clustering(
     data: pd.DataFrame, 
     method: str, 
@@ -227,7 +230,9 @@ def plot_clustering(
     plt.show()
 
 
-# ──4. Bar Plot ────────────────────────────────────────────────
+# ---------------------------------------------------------------------
+# 4. Melt Pivot Table for Plotting  
+# ---------------------------------------------------------------------
 def bar_plot(data: pd.DataFrame, 
              count: str, 
              index: str, 
@@ -311,8 +316,11 @@ def bar_plot(data: pd.DataFrame,
     plt.show()
 
 
-# ── 5. Line Plot ────────────────────────────────────────────────
-def line_plot(data: pd.DataFrame, column_name: str, category_name: str, numeric_name: str, col_wrap=4, rotation: int=45, ha='right') -> None:
+# ---------------------------------------------------------------------
+# 5. Line Plot with Peak Indicators
+# ---------------------------------------------------------------------
+def line_plot(data: pd.DataFrame, column_name: str, category_name: str, numeric_name: str, 
+                  image_path: str = None, col_wrap=4, rotation: int=45, ha='right') -> None:
     """
     Creates a faceted line plot for time-series crime data with peak indicators.
 
@@ -326,11 +334,9 @@ def line_plot(data: pd.DataFrame, column_name: str, category_name: str, numeric_
         category_name (str): The x-axis variable (e.g., 'month' or 'quarter').
         numeric_name (str): The y-axis variable (e.g., 'count').
 
-    Returns:
-        None: Displays the plot using plt.show().
-    """
+    """     
     # Create the FacetGrid
-    # 'sharex=True' to keep category alignment but 'sharey=False' 
+    # 'sharex=True' to keep category alignment, but 'sharey=False' 
     # to see trends in low-volume categories.
     g = sns.FacetGrid(
         data,
@@ -341,7 +347,10 @@ def line_plot(data: pd.DataFrame, column_name: str, category_name: str, numeric_
         height=4,
         aspect=1.2
     )
-    
+    # initializ
+    if image_path is not None:
+        image_name = image_path + "yeary_crimne_type_line_plot.png"
+            
     # Map the lineplot
     g.map(sns.lineplot, category_name, numeric_name, marker='o')
     
@@ -382,12 +391,18 @@ def line_plot(data: pd.DataFrame, column_name: str, category_name: str, numeric_
     plt.subplots_adjust(hspace=0.7)
     g.tight_layout()
     # Save the figure to a file
-    plt.savefig(f"../Image/{category_name}_line.png", dpi=600) 
+    if image_path:
+        plt.savefig(f"{image_name}", dpi=600)
+        print(f"Full plot saved to: {image_name}")
+        print()
     plt.show()
 
 
-# ── 6. Stacked Bar Plot ────────────────────────────────────────────────
-def stacked_bar_plot(data, title='', figsize=(12, 8), cmap='Set2', sort_index=True):
+# ---------------------------------------------------------------------
+# 6. Stacked Bar Plot with Percentage Labels
+# ---------------------------------------------------------------------
+def stacked_bar_plot(data_df, title='', image_path = None,
+                     figsize=(12, 8), cmap='Set2', sort_index=True):
     """
     Generates a horizontal stacked bar chart showing percentage distribution per row,
     sorted alphabetically by the index.
@@ -401,10 +416,14 @@ def stacked_bar_plot(data, title='', figsize=(12, 8), cmap='Set2', sort_index=Tr
     Returns:
         None: Displays a Matplotlib plot.
     """
+    if  image_path is not None:
+        # initialize 
+        image_name = image_path + "stack_bar_crime_plot.png"
+    
     # Sort Data by Index
     # ascending=False ensures 'A' is at the top and 'Z' is at the bottom in barh
     if sort_index:
-        data = data.sort_index(ascending=False)
+        data = data_df.sort_index(ascending=False)
 
     # Calculate row-wise percentages
     # Convert counts to percentages per row so the stacked bar sums to 100%
@@ -447,16 +466,22 @@ def stacked_bar_plot(data, title='', figsize=(12, 8), cmap='Set2', sort_index=Tr
             )
     
     # Aesthetics
-    plt.title('Relative Distribution of Crimes Across ' + title + ' %', fontsize=14, pad=15)
+    plt.title(f'Relative Distribution of Crimes Across {title}', fontsize=14, pad=15)
     plt.xlabel('Percentage of Total Count', fontweight='bold')
     plt.ylabel('FBI Crime Type', fontweight='bold')
     plt.legend(title=title, bbox_to_anchor=(1.02, 1), loc='upper left', frameon=False)
     plt.xlim(0, 100)
     plt.tight_layout()
+    if image_path:
+        plt.savefig(image_name, dpi=300, bbox_inches='tight')
+        print(f"Full plot saved to: {image_name}")
+        print()
     plt.show()
 
 
-# ── 7. Inconsistency Plot ────────────────────────────────────────────────
+# ---------------------------------------------------------------------
+# 7. Inconsistency Plot
+# ---------------------------------------------------------------------
 def plot_cuts(heights: np.array, incons: np.array) -> None:
     """Plot inconsistency profile across linkage merge heights.
 
@@ -490,7 +515,9 @@ def plot_cuts(heights: np.array, incons: np.array) -> None:
     plt.show()
 
 
-# ── 8. Crime Count Plots ────────────────────────────────────────────────
+# ---------------------------------------------------------------------
+# 8. Crime Count Plots
+# ---------------------------------------------------------------------
 def plot_crime_counts(
     esp_results: dict,
     column: str = "Gambling",
@@ -628,3 +655,74 @@ def plot_crime_counts(
         "fig": fig,
         "axes": axes,
     }
+
+
+# ---------------------------------------------------------------------
+# 9. Crime Coordinate Scatter Plot with Rasterization
+# ---------------------------------------------------------------------
+def plot_crime_coordinates(
+    data_df: pd.DataFrame, 
+    image_path: str = None
+):
+    """
+    Plots ALL points in a large dataset using rasterization to prevent 
+    memory crashes and long render times.
+    """
+    if image_path is not None:
+        # initialize 
+        image_name = image_path + "scatter_crime_plot.png"
+    # 1. Prepare Data
+    min_date = data_df['date'].min().strftime('%Y-%m')
+    max_date = data_df['date'].max().strftime('%Y-%m')
+    # Selecting only necessary columns to save RAM during the plot call
+    cols = ['x_coordinate', 'y_coordinate', 'fbi_index_code']
+    df_plot = data_df[cols].dropna()
+    df_plot = df_plot.loc[df_plot['x_coordinate'] > 0]
+
+    # 2. Initialize Figure
+    fig, ax = plt.subplots(figsize=(12, 12))
+    
+    # 3. Create Scatter Plot with Rasterization
+    # rasterized=True is the key for 8.5M points
+    sns.scatterplot(
+        data=df_plot,
+        x='x_coordinate',
+        y='y_coordinate',
+        hue='fbi_index_code',
+        alpha=0.01,         # Low alpha is critical to see density with 8.5M points
+        s=1.0,              # Smaller point size for better clarity at high density
+        edgecolor=None,     # Removing edges saves massive rendering time
+        ax=ax,
+        rasterized=True     # Renders points as a bitmap layer within the vector plot
+    )
+
+    # 4. Styling
+    ax.set_facecolor('white')
+    ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+    
+    # 5. Legend Configuration
+    legend = ax.legend(
+        title="Crime Indexed",
+        loc="upper right",
+        markerscale=10,      # Scale up markers because s=0.5 is invisible in legend
+        frameon=True,
+        bbox_to_anchor=(1.15, 1)
+    )
+    # Force legend markers to be visible
+    for handle in legend.legend_handles:
+        handle.set_alpha(1.0)
+        if hasattr(handle, "set_sizes"):
+            handle.set_sizes([100])
+
+    plt.title(f"Crime Dataset ({min_date} to {max_date}): (N={len(df_plot):,})", fontsize=16)
+    plt.xlabel("X Coordinate")
+    plt.ylabel("Y Coordinate")
+
+    # 6. Save with High DPI
+    # High DPI ensures the rasterized points don't look blurry
+    if image_path:
+        plt.savefig(image_name, dpi=300, bbox_inches='tight')
+        print(f"Full plot saved to: {image_name}")
+        print()
+        
+    plt.show()
