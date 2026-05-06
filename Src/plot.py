@@ -635,14 +635,26 @@ def plot_crime_counts(
 
     # Summary annotation on the histogram: show non-zero sample size and mean
     axes[1].text(
-        0.99,
-        0.105,
-        f"Non-zero months: {len(nonzero)}\nMean: {stats['mean_nonzero']:.1f}" if stats["mean_nonzero"] is not None else "No non-zero months",
+        0.98, 0.95,                              # X near right, Y near top
+        (f"Non-zero months: {len(nonzero)}\n"
+        f"Mean: {stats['mean_nonzero']:,.1f}"   # Added comma for large numbers
+        if stats["mean_nonzero"] is not None else "No non-zero months"),
         transform=axes[1].transAxes,
         fontsize=10,
+        fontfamily='monospace',                  # Keeps numbers and colons aligned
         verticalalignment="top",
         horizontalalignment="right",
+        bbox=dict(boxstyle='round', facecolor='white', alpha=0.7) # Added background for readability
     )
+    # axes[1].text(
+    #     0.99,
+    #     0.105,
+    #     f"Non-zero months: {len(nonzero)}\nMean: {stats['mean_nonzero']:.1f}" if stats["mean_nonzero"] is not None else "No non-zero months",
+    #     transform=axes[1].transAxes,
+    #     fontsize=10,
+    #     verticalalignment="top",
+    #     horizontalalignment="right",
+    # )
 
     plt.tight_layout()
     if show:

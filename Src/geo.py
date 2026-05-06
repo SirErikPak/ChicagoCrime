@@ -59,7 +59,7 @@ def impute_data(
             arr = pa.array(series, from_pandas=True)                # NaN-safe
         pa_arrays.append(pc.cast(arr, pa.string()))
 
-    # null_handling="emit_null" — if ANY key column is null the composite key
+    # null_handling="emit_null" - if ANY key column is null the composite key
     # is null, preventing false matches against unrelated rows in the lookup.
     # Matches pandas null-propagation semantics of the original version.
     composite_pa          = pc.binary_join_element_wise(
@@ -80,18 +80,18 @@ def impute_data(
 
     # ── 3. Pre-filter Target Rows ─────────────────────────────────────────────
     # Intersect mask with rows that have at least one null in update_cols.
-    # Eliminates reindex overhead on rows that need no imputation — critical
+    # Eliminates reindex overhead on rows that need no imputation - critical
     # when missing data is sparse relative to the full mask size.
     target_mask = mask & data[update_cols].isna().any(axis=1)
 
     # ── 4. Vectorized Imputation ──────────────────────────────────────────────
-    # Both counters initialised before the conditional — prevents NameError
+    # Both counters initialised before the conditional - prevents NameError
     # in the verbose block when target_mask is entirely False.
     filled_count = 0
-    updated_rows = set()   # unique row index — drives "Rows not updated" metric
+    updated_rows = set()   # unique row index - drives "Rows not updated" metric
 
     if target_mask.any():
-        # One reindex across ALL columns — replaces N separate .map() calls.
+        # One reindex across ALL columns - replaces N separate .map() calls.
         target_keys         = data.loc[target_mask, 'composite_key']
         imputed_block       = look_up.reindex(target_keys)
         imputed_block.index = target_keys.index   # restore original index
