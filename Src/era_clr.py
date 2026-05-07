@@ -7,6 +7,8 @@ import seaborn as sns
 from statsmodels.tsa.stattools import adfuller, kpss, zivot_andrews
 from statsmodels.stats.multitest import multipletests
 from sklearn.covariance import LedoitWolf
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 
 # -------------------------------------------------------------------
@@ -1323,6 +1325,7 @@ def _prepare_cov_matrices(eras_stat, clr_era):
             'K'      : clr_mat.shape[1],
             'cov_raw': eras_stat['era_covs'][era_key].values,
             'cov_lw' : eras_stat['era_covs_lw'][era_key].values,
+            'lw_alpha': eras_stat['lw_shrinkage'][era_key], 
             'cols'   : clr_mat.columns.tolist(),
         }
 
@@ -1528,10 +1531,16 @@ def plot_correlation_heatmaps(matrices, sparse_cats=None,
             square=True, linewidths=0.3, annot=False,
             cbar_kws={'shrink': 0.6, 'label': 'Correlation'}
         )
+
         ax.set_title(
-            f"{era}  (T={d['T']}, LW regularized)",
+            f"{era}  (T={d['T']}, LW α={matrices[era]['lw_alpha']:.4f})",
             fontsize=12, fontweight='bold'
         )
+
+        # ax.set_title(
+        #     f"{era}  (T={d['T']}, LW regularized)",
+        #     fontsize=12, fontweight='bold'
+        # )
         ax.tick_params(axis='x', rotation=90, labelsize=7)
         ax.tick_params(axis='y', rotation=0,  labelsize=7)
 
@@ -1591,13 +1600,20 @@ def plot_correlation_diff_heatmaps(matrices, sparse_cats=None,
     diff_pp = corrs['Post-COVID'] - corrs['Pre-COVID']
 
     diffs = [diff_pc, diff_cp, diff_pp]
+
+
+    # Titles with α values from each era
+    α_pre  = matrices['Pre-COVID']['lw_alpha']
+    α_cov  = matrices['COVID']['lw_alpha']
+    α_post = matrices['Post-COVID']['lw_alpha']
+
     titles = [
-        'COVID − Pre-COVID\n'
-        '(Red = stronger correlation during COVID)',
-        'Post-COVID − COVID\n'
-        '(Red = stronger correlation post-COVID)',
-        'Post-COVID − Pre-COVID\n'
-        '(Net permanent change in correlation structure)',
+        f"COVID (α={α_cov:.4f}) − Pre-COVID (α={α_pre:.4f})\n"
+        f"(Red = stronger correlation during COVID)",
+        f"Post-COVID (α={α_post:.4f}) − COVID (α={α_cov:.4f})\n"
+        f"(Red = stronger correlation post-COVID)",
+        f"Post-COVID (α={α_post:.4f}) − Pre-COVID (α={α_pre:.4f})\n"
+        f"(Net permanent change in correlation structure)",
     ]
 
     fig, axes = plt.subplots(1, 3, figsize=(30, 10))
@@ -1764,7 +1780,7 @@ def run_covariance_structure_analysis(eras_stat, clr_era,
     )
 
     # Step 3 - Per-era correlation heatmaps
-    print("\nPlotting per-era correlation heatmaps...")
+    print()
     corr_heatmaps = plot_correlation_heatmaps(
         matrices,
         sparse_cats = sparse_cats,
@@ -1772,7 +1788,7 @@ def run_covariance_structure_analysis(eras_stat, clr_era,
     )
 
     # Step 4 - Difference heatmaps (3 comparisons)
-    print("Plotting difference correlation heatmaps...")
+    print()
     corr_diffs = plot_correlation_diff_heatmaps(
         matrices,
         sparse_cats = sparse_cats,
@@ -1792,4 +1808,657 @@ def run_covariance_structure_analysis(eras_stat, clr_era,
         'corr_heatmaps': corr_heatmaps,
         'corr_diffs'   : corr_diffs,
         'log_dets'     : log_dets,
+    }
+
+
+# ============================================================
+# PCA ANALYSIS
+# ============================================================
+# Layer 1 - Data Preparation
+# Layer 2 - Per-Era PCA
+# Layer 3 - Joint PCA
+# Layer 4 - Scree Plot
+# Layer 5 - Loadings Table
+# Layer 6 - Orchestrator
+# ============================================================
+# LAYER 1 - DATA PREPARATION
+# ============================================================
+def _prepare_pca_data(clr_era, chosen_clr, sparse_cats,
+                      era_config):
+    """
+    Prepare CLR matrices for PCA by dropping sparse categories
+    and building era label arrays for joint PCA.
+
+    Parameters
+    ----------
+    clr_era     : output of slice_clr_into_eras
+    chosen_clr  : (304, 26) full CLR DataFrame
+    sparse_cats : list of sparse category names to drop
+    era_config  : dict  era -> (start, end, color)
+
+    Returns
+    -------
+    dict:
+        era_matrices : dict  era -> (T, K_dense) DataFrame
+        joint_matrix : (304, K_dense) DataFrame
+        era_labels   : (304,) array of era strings
+        era_colors   : (304,) array of color strings
+        cols         : list of K_dense column names
+        K            : number of dense crime types
+    """
+    era_map = {
+        'Pre-COVID' : 'pre_covid',
+        'COVID'     : 'covid',
+        'Post-COVID': 'post_covid',
+    }
+
+    # Drop sparse categories from all matrices
+    dense_cols = [c for c in chosen_clr.columns
+                  if c not in sparse_cats]
+
+    era_matrices = {
+        era: clr_era[clr_key][dense_cols]
+        for era, clr_key in era_map.items()
+    }
+    joint_matrix = chosen_clr[dense_cols]
+
+    # Build era label + color arrays for joint PCA
+    era_labels = np.empty(len(joint_matrix), dtype=object)
+    era_colors = np.empty(len(joint_matrix), dtype=object)
+
+    for era, clr_key in era_map.items():
+        idx            = clr_era[clr_key].index
+        mask           = joint_matrix.index.isin(idx)
+        era_labels[mask] = era
+        era_colors[mask] = era_config[era][2]
+
+    print("=" * 65)
+    print("PCA DATA PREPARATION")
+    print("=" * 65)
+    print(f"  Sparse categories dropped : {len(sparse_cats)}")
+    for cat in sorted(sparse_cats):
+        print(f"    ⚠️  {cat}")
+    print(f"  Dense categories retained : {len(dense_cols)}")
+    print(f"  Joint matrix shape        : {joint_matrix.shape}")
+    for era, mat in era_matrices.items():
+        print(f"  {era:<15}: {mat.shape}")
+
+    return {
+        'era_matrices': era_matrices,
+        'joint_matrix': joint_matrix,
+        'era_labels'  : era_labels,
+        'era_colors'  : era_colors,
+        'cols'        : dense_cols,
+        'K'           : len(dense_cols),
+    }
+
+
+# ============================================================
+# LAYER 2 - PER-ERA PCA
+# ============================================================
+def run_per_era_pca(pca_data, n_components=None,
+                    variance_threshold=0.80):
+    """
+    Fit a separate PCA for each era on dense CLR matrices.
+    Parameters
+    ----------
+    pca_data           : output of _prepare_pca_data
+    n_components       : fixed number of components.
+                         If None, use variance_threshold.
+    variance_threshold : cumulative variance to retain
+                         if n_components is None
+    Returns
+    -------
+    dict:
+        per_era : dict  era -> {
+            pca       : fitted sklearn PCA object
+            scores    : (T, n_components) DataFrame
+            loadings  : (K, n_components) DataFrame
+            var_exp   : array of explained variance ratios
+            n_comp    : number of components retained
+        }
+    """
+    era_keys = list(pca_data['era_matrices'].keys())
+    per_era  = {}
+
+    print()
+    print("=" * 65)
+    print("PER-ERA PCA")
+    print("=" * 65)
+    print(f"  Variance threshold : {variance_threshold:.0%}")
+    print(f"  Centering          : per-era (subtract era mean)")
+    print()
+
+    for era in era_keys:
+        X    = pca_data['era_matrices'][era].values
+        T, K = X.shape
+
+        pca_full = PCA()
+        pca_full.fit(X)
+        cumvar   = np.cumsum(pca_full.explained_variance_ratio_)
+
+        if n_components is not None:
+            n_comp = n_components
+        else:
+            n_comp = int(np.searchsorted(cumvar,
+                                          variance_threshold) + 1)
+            n_comp = min(n_comp, T - 1, K)
+
+        pca          = PCA(n_components=n_comp)
+        scores_arr   = pca.fit_transform(X)
+        loadings_arr = pca.components_.T
+
+        comp_names = [f"PC{i+1}" for i in range(n_comp)]
+
+        scores   = pd.DataFrame(
+            scores_arr,
+            index   = pca_data['era_matrices'][era].index,
+            columns = comp_names
+        )
+        loadings = pd.DataFrame(
+            loadings_arr,
+            index   = pca_data['cols'],
+            columns = comp_names
+        )
+
+        var_exp = pca.explained_variance_ratio_
+        cum_var = np.cumsum(var_exp)
+
+        per_era[era] = {
+            'pca'     : pca,
+            'pca_full': pca_full,
+            'scores'  : scores,
+            'loadings': loadings,
+            'var_exp' : var_exp,
+            'cum_var' : cum_var,
+            'n_comp'  : n_comp,
+            'T'       : T,
+            'K'       : K,
+        }
+
+        print(f"  {era:<15}: T={T:<3}  K={K}  "                 
+              f"components retained={n_comp}  " 
+              f"variance explained={cum_var[n_comp-1]:.1%}")
+
+
+    print()
+    print("  Per-era PC1 / PC2 breakdown:")
+    print(f"  {'Era':<15} {'PC1':>6} {'PC2':>8} "
+          f"{'n_comp':>8} {'Total':>8} {'PC1-PC2 gap':>12}")
+    print(f"  {'-'*62}")
+    for era, d in per_era.items():
+        pc1   = d['var_exp'][0]
+        pc2   = d['var_exp'][1]
+        gap   = pc1 - pc2
+        total = d['cum_var'][d['n_comp']-1]
+        print(f"  {era:<15} {pc1:>7.1%} {pc2:>7.1%} "
+              f"{d['n_comp']:>8} {total:>8.1%} {gap:>11.1%}")
+
+    return {'per_era': per_era}
+
+    
+# ============================================================
+# LAYER 3 - JOINT PCA
+# ============================================================
+def run_joint_pca(pca_data, n_components=None,
+                  variance_threshold=0.80):
+    """
+    Fit a single PCA on the full 304-month CLR matrix.
+    All three eras projected into the same latent space.
+
+    Parameters
+    ----------
+    pca_data           : output of _prepare_pca_data
+    n_components       : fixed number of components
+    variance_threshold : cumulative variance to retain
+
+    Returns
+    -------
+    dict:
+        pca      : fitted sklearn PCA object
+        scores   : (304, n_comp) DataFrame with era labels
+        loadings : (K, n_comp) DataFrame
+        var_exp  : explained variance ratios
+        n_comp   : components retained
+    """
+    X    = pca_data['joint_matrix'].values
+    T, K = X.shape
+
+    pca_full = PCA()
+    pca_full.fit(X)
+    cumvar   = np.cumsum(pca_full.explained_variance_ratio_)
+
+    if n_components is not None:
+        n_comp = n_components
+    else:
+        n_comp = int(np.searchsorted(cumvar,
+                                      variance_threshold) + 1)
+        n_comp = min(n_comp, T - 1, K)
+
+    pca          = PCA(n_components=n_comp)
+    scores_arr   = pca.fit_transform(X)
+    loadings_arr = pca.components_.T
+
+    comp_names = [f"PC{i+1}" for i in range(n_comp)]
+
+    scores = pd.DataFrame(
+        scores_arr,
+        index   = pca_data['joint_matrix'].index,
+        columns = comp_names
+    )
+    scores['era']   = pca_data['era_labels']
+    scores['color'] = pca_data['era_colors']
+
+    loadings = pd.DataFrame(
+        loadings_arr,
+        index   = pca_data['cols'],
+        columns = comp_names
+    )
+
+    var_exp = pca.explained_variance_ratio_
+    cum_var = np.cumsum(var_exp)
+
+    # Compute centroids from scores
+    comp_cols  = [f"PC{i+1}" for i in range(n_comp)]
+    centroids  = (
+        scores 
+        .groupby('era')[comp_cols]
+        .mean()
+        .round(4)
+    )      
+
+    print()
+    print("=" * 65)
+    print("JOINT PCA")
+    print("=" * 65)
+    print(f"  Full matrix       : T={T}, K={K}")
+    print(f"  Components kept   : {n_comp}")
+    print(f"  Variance explained: {cum_var[n_comp-1]:.1%}")
+    for i, (v, cv) in enumerate(zip(var_exp, cum_var)):
+        print(f"    PC{i+1}: {v:.1%}  cumulative={cv:.1%}")
+
+    # Era centroids in PC space                                                      
+    print()
+    print("  Era centroids in joint PC space:")
+
+    table = centroids.to_string(
+        index=True,
+        justify="right",
+        float_format=lambda x: f"{x:>+8.4f}"
+    )
+
+    # shift whole block 4 spaces right
+    print("\n".join("    " + line for line in table.splitlines()))                                                    
+
+    # PC1 reversion calculation                                
+    if ('Pre-COVID' in centroids.index and 'COVID' 
+        in centroids.index and 'Post-COVID' in centroids.index):                        
+        pre_pc1  = centroids.loc['Pre-COVID',  'PC1']         
+        cov_pc1  = centroids.loc['COVID',      'PC1']         
+        post_pc1 = centroids.loc['Post-COVID', 'PC1']         
+        total    = cov_pc1  - pre_pc1                          
+        recovery = cov_pc1  - post_pc1                         
+        pct_rev  = recovery / total * 100                      
+        pct_perm = 100 - pct_rev                               
+        print()                                                 
+        print(f"  PC1 structural shift analysis:")             
+        print(f"    Pre -> COVID shift     : {total:+.4f}")       
+        print(f"    COVID- > Post recovery : {recovery:+.4f}")    
+        print(f"    % reversion            : {pct_rev:.1f}%")     
+        print(f"    % permanent            : {pct_perm:.1f}%")    
+
+
+    return {
+        'pca'     : pca,
+        'pca_full': pca_full,
+        'scores'  : scores,
+        'loadings': loadings,
+        'var_exp' : var_exp,
+        'cum_var' : cum_var,
+        'n_comp'  : n_comp,
+    }
+
+
+# ============================================================
+# LAYER 4 - SCREE PLOTS
+# ============================================================
+def plot_pca_scree(per_era_results, joint_results,
+                   era_config, save_path=None):
+    """
+    Plot scree plots for per-era and joint PCA side by side.
+
+    Parameters
+    ----------
+    per_era_results : output of run_per_era_pca
+    joint_results   : output of run_joint_pca
+    era_config      : dict  era -> (start, end, color)
+    save_path       : directory path for saving
+
+    Returns
+    -------
+    dict: empty (side-effect only)
+    """
+    era_keys = list(per_era_results['per_era'].keys())
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+    # ── Left: per-era scree ──────────────────────────────────
+    ax = axes[0]
+    for era in era_keys:
+        d       = per_era_results['per_era'][era]
+        color   = era_config[era][2]
+        n_show  = min(10, len(d['pca_full']
+                              .explained_variance_ratio_))
+        var_exp = d['pca_full'].explained_variance_ratio_[:n_show]
+        cum_var = np.cumsum(d['pca_full']
+                             .explained_variance_ratio_[:n_show])
+        x = np.arange(1, n_show + 1)
+
+        ax.plot(x, var_exp * 100, 'o-',
+                color=color, label=f"{era} (T={d['T']})",
+                linewidth=2, markersize=6)
+        ax.axvline(x=d['n_comp'], color=color,
+                   linestyle='--', alpha=0.5)
+
+    ax.set_xlabel('Principal Component', fontsize=12)
+    ax.set_ylabel('Explained Variance (%)', fontsize=12)
+    ax.set_title('Per-Era Scree Plot\n'
+                 '(dashed = components retained)',
+                 fontsize=13, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.set_xticks(range(1, 11))
+
+    # ── Right: joint scree ───────────────────────────────────
+    ax = axes[1]
+    n_show  = min(10, len(joint_results['pca_full']
+                           .explained_variance_ratio_))
+    var_exp = joint_results['pca_full'] \
+                  .explained_variance_ratio_[:n_show] * 100
+    cum_var = np.cumsum(
+        joint_results['pca_full']
+        .explained_variance_ratio_[:n_show]
+    ) * 100
+    x = np.arange(1, n_show + 1)
+
+    ax.bar(x, var_exp, color='steelblue',
+           alpha=0.7, label='Individual')
+    ax.plot(x, cum_var, 'ro-',
+            linewidth=2, markersize=6, label='Cumulative')
+    ax.axhline(y=80, color='gray', linestyle='--',
+               alpha=0.7, label='80% threshold')
+    ax.axvline(x=joint_results['n_comp'],
+               color='darkred', linestyle='--',
+               alpha=0.7,
+               label=f"Components kept={joint_results['n_comp']}")
+
+    ax.set_xlabel('Principal Component', fontsize=12)
+    ax.set_ylabel('Explained Variance (%)', fontsize=12)
+    ax.set_title('Joint PCA Scree Plot\n'
+                 f"(T=304, K={joint_results['loadings'].shape[0]})",
+                 fontsize=13, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.set_xticks(range(1, n_show + 1))
+
+    plt.suptitle(
+        'PCA Scree Plots - Dense CLR Crime Categories (K=23)',
+        fontsize=14, fontweight='bold', y=1.02
+    )
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(f"{save_path}pca_scree.png",
+                    dpi=300, bbox_inches='tight')
+    plt.show()
+
+    return {}
+
+
+# ============================================================
+# LAYER 5 - JOINT PCA SCATTER + LOADINGS
+# ============================================================
+def plot_joint_pca_scatter(joint_results, era_config,
+                           save_path=None):
+    """
+    Plot PC1 vs PC2 scatter colored by era for joint PCA.
+
+    Returns
+    -------
+    dict: empty (side-effect only)
+    """
+    scores   = joint_results['scores']
+    era_keys = list(era_config.keys())
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    for era in era_keys:
+        color  = era_config[era][2]
+        mask   = scores['era'] == era
+        subset = scores[mask]
+        ax.scatter(
+            subset['PC1'], subset['PC2'],
+            c=color, label=f"{era} (n={mask.sum()})",
+            alpha=0.6, s=40, edgecolors='white',
+            linewidths=0.3
+        )
+
+    # Era centroids
+    for era in era_keys:
+        color  = era_config[era][2]
+        mask   = scores['era'] == era
+        cx     = scores.loc[mask, 'PC1'].mean()
+        cy     = scores.loc[mask, 'PC2'].mean()
+        ax.scatter(cx, cy, c=color, s=200,
+                   marker='*', edgecolors='black',
+                   linewidths=1.0, zorder=5)
+        ax.annotate(
+            era, (cx, cy),
+            textcoords='offset points',
+            xytext=(8, 4),
+            fontsize=10, fontweight='bold', color=color
+        )
+
+    var1 = joint_results['var_exp'][0] * 100
+    var2 = joint_results['var_exp'][1] * 100
+    ax.set_xlabel(f"PC1 ({var1:.1f}% variance explained)",
+                  fontsize=12)
+    ax.set_ylabel(f"PC2 ({var2:.1f}% variance explained)",
+                  fontsize=12)
+    ax.set_title(
+        'Joint PCA - Monthly CLR Scores by Era\n'
+        '★ = era centroid',
+        fontsize=13, fontweight='bold'
+    )
+    ax.legend(fontsize=11)
+    ax.axhline(0, color='gray', linewidth=0.5, alpha=0.5)
+    ax.axvline(0, color='gray', linewidth=0.5, alpha=0.5)
+    ax.grid(True, alpha=0.2)
+
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(f"{save_path}pca_joint_scatter.png",
+                    dpi=300, bbox_inches='tight')
+    plt.show()
+
+    return {}
+
+
+def plot_pca_loadings(joint_results, per_era_results,
+                      era_config, n_top=8,
+                      save_path=None):
+    """
+    Plot top crime type loadings for PC1 and PC2
+    for joint and per-era PCA side by side.
+
+    Parameters
+    ----------
+    n_top : number of top loadings to show per component
+
+    Returns
+    -------
+    dict:
+        joint_top  : dict  PC -> top-n loadings Series
+        per_era_top: dict  era -> PC -> top-n loadings Series
+    """
+    era_keys   = list(per_era_results['per_era'].keys())
+    joint_load = joint_results['loadings']
+
+    fig, axes  = plt.subplots(2, 4, figsize=(28, 12))
+
+    joint_top   = {}
+    per_era_top = {era: {} for era in era_keys}
+
+    for pc_idx, pc in enumerate(['PC1', 'PC2']):
+
+        # ── Joint PCA loadings ────────────────────────────
+        ax    = axes[pc_idx][0]
+        if pc in joint_load.columns:
+            load  = joint_load[pc].sort_values()
+            top   = pd.concat([load.head(n_top//2),
+                                load.tail(n_top//2)])
+            colors_bar = ['#d73027' if v > 0
+                          else '#4575b4' for v in top.values]
+            ax.barh(range(len(top)), top.values,
+                    color=colors_bar, alpha=0.8)
+            ax.set_yticks(range(len(top)))
+            ax.set_yticklabels(
+                [c[:28] for c in top.index],
+                fontsize=8
+            )
+            ax.axvline(0, color='black', linewidth=0.8)
+            ax.set_title(f"Joint PCA - {pc}",
+                         fontsize=11, fontweight='bold')
+            ax.set_xlabel('Loading', fontsize=9)
+            joint_top[pc] = top
+
+        # ── Per-era loadings ──────────────────────────────
+        for era_idx, era in enumerate(era_keys):
+            ax    = axes[pc_idx][era_idx + 1]
+            color = era_config[era][2]
+            d     = per_era_results['per_era'][era]
+            if pc in d['loadings'].columns:
+                load  = d['loadings'][pc].sort_values()
+                top   = pd.concat([load.head(n_top//2),
+                                    load.tail(n_top//2)])
+                colors_bar = [color if v > 0
+                              else '#aaaaaa'
+                              for v in top.values]
+                ax.barh(range(len(top)), top.values,
+                        color=colors_bar, alpha=0.8)
+                ax.set_yticks(range(len(top)))
+                ax.set_yticklabels(
+                    [c[:28] for c in top.index],
+                    fontsize=8
+                )
+                ax.axvline(0, color='black', linewidth=0.8)
+                ax.set_title(
+                    f"{era} - {pc}\n(T={d['T']})",
+                    fontsize=11, fontweight='bold',
+                    color=color
+                )
+                ax.set_xlabel('Loading', fontsize=9)
+                per_era_top[era][pc] = top
+            else:
+                ax.set_visible(False)
+
+    plt.suptitle(
+        'PCA Loadings - PC1 and PC2\n'
+        'Top crime types driving each component per era',
+        fontsize=14, fontweight='bold', y=1.02
+    )
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(f"{save_path}pca_loadings.png",
+                    dpi=300, bbox_inches='tight')
+    plt.show()
+
+    return {
+        'joint_top'  : joint_top,
+        'per_era_top': per_era_top,
+    }
+
+
+# ============================================================
+# LAYER 6 - ORCHESTRATOR
+# ============================================================
+def run_pca_analysis(clr_era, chosen_clr, sparse_cats,
+                     era_config, n_components=None,
+                     variance_threshold=0.80,
+                     save_path=None):
+    """
+    Full PCA analysis pipeline.
+
+    Steps
+    -----
+    1. Prepare data - drop sparse, build joint matrix
+    2. Per-era PCA - separate model per era
+    3. Joint PCA   - single model, all eras
+    4. Scree plots - per-era + joint
+    5. Joint scatter - months colored by era
+    6. Loadings - top crime types per component
+
+    Parameters
+    ----------
+    clr_era            : output of slice_clr_into_eras
+    chosen_clr         : (304, 26) full CLR DataFrame
+    sparse_cats        : list of sparse categories to drop
+    era_config         : dict  era -> (start, end, color)
+    n_components       : fixed components (None = use threshold)
+    variance_threshold : cumulative variance target (default 0.80)
+    save_path          : directory for saving plots
+
+    Returns
+    -------
+    dict:
+        pca_data        : prepared matrices
+        per_era         : per-era PCA results
+        joint           : joint PCA results
+        loadings        : top loadings per component
+    """
+    print("\n" + "=" * 65)
+    print("PCA ANALYSIS")
+    print("=" * 65)
+
+    # Step 1 - Prepare
+    pca_data = _prepare_pca_data(
+        clr_era, chosen_clr, sparse_cats, era_config
+    )
+
+    # Step 2 - Per-era PCA
+    per_era = run_per_era_pca(
+        pca_data,
+        n_components       = n_components,
+        variance_threshold = variance_threshold,
+    )
+
+    # Step 3 - Joint PCA
+    joint = run_joint_pca(
+        pca_data,
+        n_components       = n_components,
+        variance_threshold = variance_threshold,
+    )
+
+    # Step 4 - Scree plots
+    print()
+    plot_pca_scree(per_era, joint, era_config, save_path)
+
+    # Step 5 - Joint scatter
+    print()
+    plot_joint_pca_scatter(joint, era_config, save_path)
+
+    # Step 6 - Loadings
+    print()
+    loadings = plot_pca_loadings(
+        joint, per_era, era_config,
+        n_top=8, save_path=save_path
+    )
+
+    print("\n" + "=" * 65)
+    print("PCA ANALYSIS COMPLETE")
+    print("=" * 65)
+
+    return {
+        'pca_data': pca_data,
+        'per_era' : per_era,
+        'joint'   : joint,
+        'loadings': loadings,
     }
