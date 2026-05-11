@@ -1,17 +1,11 @@
-"""Aitchison / CLR plotting helpers.
-
-Utilities to visualize variance structure and PC1 behaviour across a pseudocount
-(`epsilon`) sweep applied before CLR transformation. Functions expect a mapping
-from epsilon (float) to CLR DataFrames (rows × features).
-
-This module focuses on concise, testable plotting helpers that return figure
-and axis objects for downstream saving or embedding in notebooks.
-"""
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from typing import Mapping
+from sklearn.decomposition import PCA
+from numpy.linalg import norm
+from scipy.linalg import subspace_angles
+
 
 
 # ---------------------------------------------------------------------------
@@ -371,3 +365,204 @@ def plot_pc1_loading_stability(
     )
     fig.tight_layout()
     return {"figure": fig, "axis": ax}
+
+
+# ---------------------------------------------------------------------------
+# 4. Three-PC loadings plot
+# ---------------------------------------------------------------------------
+def plot_three_pc_loadings(
+    clr_data: pd.DataFrame,
+    chosen_eps: float,
+    exclude_features: list = None,
+    figsize: tuple[float, float] = (24, 10),
+    label_fmt: str = "%.3f",
+    verbose=True
+) -> dict:
+    
+    # ---------------------------------------------------------
+    # 1. Feature Exclusion & Manifest Print (Aligned under 'E')
+    # ---------------------------------------------------------
+    working_data = clr_data.copy()
+    excluded_found = []
+    
+    if exclude_features:
+        excluded_found = sorted([f for f in exclude_features if f in working_data.columns])
+        working_data = working_data.drop(columns=excluded_found)
+
+    if verbose:
+        width = 60
+        lbl_w = 30 
+        val_w = 6  
+        header = f"📊 PCA DATA MANIFEST (ε = {chosen_eps:.2g})"
+        list_indent = 2 
+
+        print("\n" + "═" * width)
+        print(f"{header:^{width}}")
+        print("─" * width)
+        print(f"{'✅ Observations (Rows)':<{lbl_w}}: {working_data.shape[0]:>{val_w}}")
+        print(f"{'✅ Included Features':<{lbl_w}}: {working_data.shape[1]:>{val_w}}")
+        
+        if excluded_found:
+            print(f"{'🚫 Excluded Features':<{lbl_w}}: {len(excluded_found):>{val_w}}")
+            for i in range(0, len(excluded_found), 2):
+                chunk = ", ".join(excluded_found[i:i+2])
+                print(f"{' ' * list_indent}• {chunk}")
+        else:
+            print(f"{'🚫 Excluded Features':<{lbl_w}}: {'None':>{val_w}}")
+        print("═" * width + "\n")
+
+    # ---------------------------------------------------------
+    # 2. PCA Fitting & Sign Normalization
+    # ---------------------------------------------------------
+    pca = PCA()
+    coords_raw = pca.fit_transform(working_data.values)
+    loadings_raw = pca.components_.copy()
+    ratios = pca.explained_variance_ratio_.copy()
+    cum_var = ratios[:3].sum()
+    singular_vals = pca.singular_values_.copy()
+
+    signs = np.array([
+        np.sign(loadings_raw[i, np.abs(loadings_raw[i]).argmax()])
+        for i in range(loadings_raw.shape[0])
+    ])
+    loadings_norm = loadings_raw * signs[:, None]
+    coords_norm = coords_raw * signs
+
+    order = pd.Series(loadings_norm[0], index=working_data.columns).sort_values().index
+
+    # ---------------------------------------------------------
+    # 3. Visualization (Shifted further Left)
+    # ---------------------------------------------------------
+    pc_colors = ["#D85A30", "#185FA5", "#51A351"]
+    neg_color = "#777777"
+    
+    fig, axes = plt.subplots(1, 3, figsize=figsize, sharey=True)
+
+    for i, ax in enumerate(axes):
+        ser = pd.Series(loadings_norm[i], index=working_data.columns).reindex(order)
+        colors = [pc_colors[i] if val >= 0 else neg_color for val in ser.values]
+
+        bars = ax.barh(ser.index, ser.values, color=colors, edgecolor="white", lw=0.6)
+        ax.bar_label(bars, fmt=label_fmt, padding=3, fontsize=11, fontweight="bold")
+        ax.axvline(0, color="black", lw=1, zorder=3)
+        
+        ax.set_title(f"PC{i+1} Loadings\nVar: {ratios[i]:.1%}", fontweight="bold", size=15)
+        ax.xaxis.grid(True, ls="--", alpha=0.5)
+        
+        if i == 0:
+            # pad=20 pushes the crime names away from the Y-axis line
+            ax.tick_params(axis="y", labelsize=12, left=True, length=0, pad=50)
+            plt.setp(ax.get_yticklabels(), fontweight="bold")
+        else:
+            ax.tick_params(axis="y", length=0)
+        
+        for spine in ["left", "top", "right"]:
+            ax.spines[spine].set_visible(False)
+
+    # Move 'Crime Features' label significantly to the left
+    axes[0].set_ylabel("Crime Features", fontweight="bold", size=14, labelpad=140)
+
+    # subplots_adjust left=0.30 creates a massive gutter on the left side
+    plt.subplots_adjust(left=0.30, wspace=0.15)
+
+    plt.suptitle(
+        f"Principal Component Loadings (PC1–PC3) at $\\varepsilon$ = {chosen_eps:.2g}\n"
+        f"Cumulative Explained Variance: {cum_var:.1%}",
+        fontweight="bold", size=18, y=1.05
+    )
+
+    return {
+        "figure": fig,
+        "axes": axes,
+        "loadings_raw": loadings_raw,
+        "loadings_norm": loadings_norm,
+        "coordinates": coords_norm,
+        "variance_ratio": ratios,
+        "singular_values": singular_vals,
+        "excluded": excluded_found
+    }
+
+
+# ---------------------------------------------------------------------------
+# 5. PCA Stability Comparison
+# ---------------------------------------------------------------------------
+def compare_pca_stability(results, eps1, eps2, n_components=3, drift_threshold=0.95):
+    """
+    Compare two PCA fits across pseudocount values.
+
+    Diagnostics:
+    - Singular value magnitude shift (top n_components)
+    - Per-PC cosine similarity of loadings (direction stability)
+    - Principal angles between top-n_components loading subspaces
+    - Per-PC correlation of coordinates (month-position stability)
+
+    Parameters
+    ----------
+    results : dict
+        Maps epsilon → output of plot_three_pc_loadings.
+    eps1, eps2 : float
+        Two epsilon keys to compare.
+    n_components : int
+        Number of top components to compare.
+    drift_threshold : float
+        Cosine similarity below this is flagged as drift.
+
+    Returns
+    -------
+    dict with keys: sv_diff_norm, cosines, principal_angles_deg,
+                    coordinate_correlations
+    """
+    r1, r2 = results[eps1], results[eps2]
+
+    # 1. Singular values (matched to n_components)
+    sv1 = r1['singular_values'][:n_components]
+    sv2 = r2['singular_values'][:n_components]
+    sv_diff_norm = norm(sv1 - sv2)
+
+    # 2. Loadings — use NORMALIZED to anchor sign convention
+    L1 = r1['loadings_norm'][:n_components]   # (n_components, n_features)
+    L2 = r2['loadings_norm'][:n_components]
+
+    # 3. Vectorized cosine similarity per PC
+    cosines = np.einsum('ij,ij->i', L1, L2) / (norm(L1, axis=1) * norm(L2, axis=1))
+
+    # 4. Principal angles between subspaces
+    angles_deg = np.degrees(subspace_angles(L1.T, L2.T))
+
+    # 5. Coordinate trajectory: per-PC correlation across months
+    C1 = r1['loadings_norm'][:, :n_components]   # (n_months, n_components)
+    C2 = r2['loadings_norm'][:, :n_components]
+    coord_corrs = np.array([
+        np.corrcoef(C1[:, i], C2[:, i])[0, 1]
+        for i in range(n_components)
+    ])
+
+    # ------------------------------------------------------------
+    # Output
+    # ------------------------------------------------------------
+    width, lbl_w, val_w = 65, 30, 15
+
+    print("\n" + "═" * width)
+    print(f"{'🔍 PCA STABILITY CROSS-CHECK':^{width}}")
+    print(f"{f'(ε={eps1} vs ε={eps2})':^{width}}")
+    print("─" * width)
+
+    print(f"{'⚖️  SV Magnitude Shift (L2)':<{lbl_w}}: {sv_diff_norm:>{val_w}.4f}")
+    print(f"{'📐  Max Subspace Angle':<{lbl_w}}: {angles_deg.max():>{val_w-1}.2f}°")
+    print(f"{'📐  All Subspace Angles':<{lbl_w}}: {np.array2string(angles_deg.round(2)):>{val_w}}")
+    print("─" * width)
+
+    for i in range(n_components):
+        cos_status = "✅" if cosines[i] >= drift_threshold else "⚠️"
+        cor_status = "✅" if coord_corrs[i] >= drift_threshold else "⚠️"
+        print(f"{f'PC{i+1} loading cosine':<{lbl_w}}: {cosines[i]:>{val_w}.4f} {cos_status}")
+        print(f"{f'PC{i+1} coordinate corr':<{lbl_w}}: {coord_corrs[i]:>{val_w}.4f} {cor_status}")
+
+    print("═" * width + "\n")
+
+    return {
+        'sv_diff_norm': sv_diff_norm,
+        'cosines': cosines,
+        'principal_angles_deg': angles_deg,
+        'coordinate_correlations': coord_corrs,
+    }

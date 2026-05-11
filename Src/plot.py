@@ -3,6 +3,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
+import matplotlib.patches as mpatches
 import scipy.cluster.hierarchy as hierarchy
 from scipy.spatial.distance import pdist, squareform
 from matplotlib.colors import LinearSegmentedColormap
@@ -10,6 +11,204 @@ from scatterd import scatterd
 # Python file imports
 import hierarchy_clustering
 from typing import Tuple
+
+
+# ---------------------------------------------------------------------
+# 0. Fancy PCA Plot Bundle
+# ---------------------------------------------------------------------
+def fancy_pca_plot_bundle(results, era_config, image_path=None, point_size=90, font_size=14):
+    """
+    Generate a seamless, presentation‑quality PCA visualization with:
+        • KDE density background (vlag colormap)
+        • Era‑colored scatter overlays
+        • Programmatic background color matching (no white corners)
+        • Clean axis labeling with variance ratios
+        • Automatic era assignment from timestamps
+        • Optional PNG export
+
+    This version focuses on visual polish:
+        - Background color is sampled directly from the 'vlag' colormap
+          to eliminate corner artifacts.
+        - Margins and padding are tuned for balanced framing.
+        - Labels and titles use consistent spacing and color contrast.
+
+    Parameters
+    ----------
+    results : dict
+        PCA output bundle containing:
+            'coordinates_normalized' : ndarray (n_samples × 2)
+                Normalized PC1–PC2 coordinates.
+            'observation_index' : array-like
+                Timestamps for each observation.
+            'variance_ratio' : array-like
+                Explained variance for PC1 and PC2.
+    era_config : dict
+        Mapping of era name → (start_date, end_date, color).
+        Example:
+            {
+                'Pre-COVID': ('2014-01-01', '2020-03-01', 'blue'),
+                'COVID':     ('2020-03-01', '2022-06-01', 'red'),
+                'Post-COVID':('2022-06-01', '2024-01-01', 'green')
+            }
+    image_path : str or None, default None
+        If provided, saves the figure to:
+            f"{image_path}PCA_Seamless_Match.png"
+    point_size : int, default 90
+        Marker size for scatter points.
+    font_size : int, default 14
+        Base font size for titles, labels, and legend.
+
+    Returns
+    -------
+    dict
+        {
+            'figure': matplotlib.figure.Figure,
+            'axis'  : matplotlib.axes.Axes
+        }
+    """
+
+    # ------------------------------------------------------------
+    # 1. EXTRACT PCA OUTPUTS
+    # ------------------------------------------------------------
+    coords = results['coordinates_normalized']      # PC1–PC2 coordinates
+    timestamps = results['observation_index']       # Raw timestamps
+    variance_ratio = results['variance_ratio']      # Explained variance for PC1/PC2
+    pc1, pc2 = coords[:, 0], coords[:, 1]           # Split for convenience
+
+    # Metadata for title
+    n_months = len(timestamps)
+    k_categories = coords.shape[1]
+
+    # ------------------------------------------------------------
+    # 2. ERA LABEL ASSIGNMENT
+    # ------------------------------------------------------------
+    # Convert timestamps to YYYY-MM-DD strings for comparison
+    ts_str_array = np.array([str(ts)[:10] for ts in timestamps])
+
+    # Default label for timestamps outside defined eras
+    era_labels = np.full(len(ts_str_array), "Other", dtype=object)
+
+    # Assign each timestamp to its era based on start/end boundaries
+    for name, (start, end, _) in era_config.items():
+        mask = (ts_str_array >= start) & (ts_str_array < end)
+        era_labels[mask] = name
+
+    # ------------------------------------------------------------
+    # 3. PROGRAMMATIC BACKGROUND COLOR MATCH
+    # ------------------------------------------------------------
+    # Sample the 'vlag' colormap at 0.0 to match KDE background
+    match_color = plt.get_cmap("vlag")(0.0)
+
+    # ------------------------------------------------------------
+    # 4. BASE DENSITY PLOT (KDE)
+    # ------------------------------------------------------------
+    args_density = {
+        'fill': True,
+        'thresh': 0,
+        'levels': 100,
+        'cmap': "vlag"
+    }
+
+    # Render KDE density (points added later)
+    fig, ax = scatterd(
+        pc1, pc2,
+        labels=era_labels,
+        s=0,                       # No points yet — only density
+        density=True,
+        args_density=args_density,
+        verbose=0
+    )
+
+    # ------------------------------------------------------------
+    # 5. FIX CORNERS + ADD MARGINS
+    # ------------------------------------------------------------
+    fig.set_facecolor(match_color)   # Match figure background
+    ax.set_facecolor(match_color)    # Match axes background
+
+    ax.margins(0.15)                 # Add breathing room around clusters
+
+    # ------------------------------------------------------------
+    # 6. ERA-COLORED SCATTER OVERLAY
+    # ------------------------------------------------------------
+    for era_name, (start, end, color) in era_config.items():
+        mask = (era_labels == era_name)
+        if np.any(mask):
+            ax.scatter(
+                pc1[mask], pc2[mask],
+                c=color,
+                s=point_size,
+                edgecolor='white',
+                linewidth=0.8,
+                alpha=0.9,
+                zorder=10
+            )
+
+    # ------------------------------------------------------------
+    # 7. TITLES & AXIS LABELS
+    # ------------------------------------------------------------
+    ax.set_title(
+        f"Structural Realignment of Chicago Crime\n"
+        f"CLR-Transformed Latent Space | $N={n_months}, K={k_categories}$",
+        fontsize=font_size + 2,
+        fontweight='bold',
+        pad=35,
+        color='white'
+    )
+
+    ax.set_xlabel(
+        f"PC1 ({variance_ratio[0] * 100:.1f}%) - Regime Shift",
+        fontsize=font_size,
+        color='white',
+        labelpad=15
+    )
+    ax.set_ylabel(
+        f"PC2 ({variance_ratio[1] * 100:.1f}%) - Volatility",
+        fontsize=font_size,
+        color='white',
+        labelpad=15
+    )
+
+    # White ticks for dark background
+    ax.tick_params(colors='white', labelsize=font_size - 2)
+
+    # ------------------------------------------------------------
+    # 8. LEGEND (ERA COLORS + DATE RANGES)
+    # ------------------------------------------------------------
+    handles = [
+        mpatches.Patch(color=c, label=f"{n}\n({s} to {e})")
+        for n, (s, e, c) in era_config.items()
+    ]
+
+    ax.legend(
+        handles=handles,
+        loc='upper left',
+        bbox_to_anchor=(1.02, 1),
+        fontsize=font_size - 5,
+        frameon=True,
+        shadow=True
+    )
+
+    # ------------------------------------------------------------
+    # 9. SUBTLE GRID + SPINE CLEANUP
+    # ------------------------------------------------------------
+    ax.grid(True, color='white', alpha=0.1, linestyle='--')
+
+    # Remove white spines by matching background color
+    for spine in ax.spines.values():
+        spine.set_edgecolor(match_color)
+
+    # ------------------------------------------------------------
+    # 10. OPTIONAL SAVE
+    # ------------------------------------------------------------
+    if image_path:
+        plt.savefig(
+            f"{image_path}PCA_Seamless_Match.png",
+            bbox_inches='tight',
+            facecolor=fig.get_facecolor()
+        )
+
+    return {"figure": fig, "axis": ax}
+
 
 # ---------------------------------------------------------------------
 # 1. Fancy PCA Plot
@@ -516,161 +715,7 @@ def plot_cuts(heights: np.array, incons: np.array) -> None:
 
 
 # ---------------------------------------------------------------------
-# 8. Crime Count Plots
-# ---------------------------------------------------------------------
-def plot_crime_counts(
-    esp_results: dict,
-    column: str = "Gambling",
-    figsize: Tuple[int, int] = (14, 8),
-    bins: int = 40,
-    show: bool = True,
-) -> dict:
-    """Plot a pivot column's raw time series and its non-zero distribution.
-
-    This helper extracts a single column (time series) from
-    ``esp_results['pivot_data']``, computes basic zero/non-zero summary
-    statistics, plots the raw counts and a histogram of non-zero values,
-    and returns the computed objects for downstream inspection or tests.
-
-    Parameters
-    ----------
-    esp_results : dict
-        Mapping expected to contain key ``'pivot_data'`` whose value is a
-        pandas-compatible mapping (DataFrame or dict-like) of time series.
-    column : str, optional
-        The pivot column to analyze and plot. Default is ``'Gambling'``.
-    figsize : tuple[int, int], optional
-        Figure size passed to ``plt.subplots``. Defaults to ``(14, 8)``.
-    bins : int, optional
-        Number of bins used for the non-zero histogram. Defaults to 40.
-    show : bool, optional
-        If True (default), call ``plt.show()`` before returning.
-
-    Returns
-    -------
-    dict
-        A dictionary with the following keys:
-        - ``series`` : pd.Series   -- the extracted series (index reset)
-        - ``stats``  : dict        -- summary statistics (n_total, n_zeros, n_nonzero,
-                                     mean_nonzero, median_nonzero, max_nonzero)
-        - ``fig``    : matplotlib.figure.Figure
-        - ``axes``   : numpy.ndarray of Axes
-
-    Notes
-    -----
-    - The function treats values equal to ``0`` as structural zeros and
-      excludes them from the histogram (the histogram only shows non-zero
-      counts).
-    - Missing or absent columns raise a ``KeyError`` to fail fast in tests.
-    """
-    # Validate input structure and extract the pivot mapping
-    pivot = esp_results.get("pivot_data")
-    if pivot is None:
-        raise KeyError("esp_results must contain key 'pivot_data'.")
-
-    # Fail fast if requested column is missing (helps unit tests and callers)
-    if column not in pivot:
-        raise KeyError(f"Column '{column}' not found in esp_results['pivot_data'].")
-
-    # Build a flat pandas Series (keep original index for year-month labels)
-    series_with_index = pd.Series(pivot[column])
-    date_index = series_with_index.index
-    series = series_with_index.reset_index(drop=True)
-
-    # Summary counts: total, zeros, and non-zero bool_mask
-    n_total = len(series)
-    n_zeros = int((series == 0).sum())
-    nonzero = series[series > 0]
-
-    # Basic numeric summaries for non-zero values; None when no non-zero entries
-    stats = {
-        "n_total": int(n_total),
-        "n_zeros": int(n_zeros),
-        "n_nonzero": int(len(nonzero)),
-        "mean_nonzero": float(nonzero.mean()) if len(nonzero) > 0 else None,
-        "median_nonzero": float(nonzero.median()) if len(nonzero) > 0 else None,
-        "max_nonzero": int(nonzero.max()) if len(nonzero) > 0 else None,
-    }
-
-    # Create two stacked subplots: top shows the raw time series, bottom shows
-    # the histogram of the non-zero values (distribution of observed counts).
-    fig, axes = plt.subplots(2, 1, figsize=figsize)
-
-    # Top subplot: raw counts over time with a horizontal zero reference
-    axes[0].plot(series.values, color="steelblue", linewidth=0.8)
-    axes[0].axhline(0, color="red", linewidth=0.5, linestyle="--")
-    axes[0].set_title(f"{column} - Raw Counts Across {n_total} Months")
-    axes[0].set_xlabel("Year-Month")
-    axes[0].set_ylabel("Count")
-    axes[0].set_xlim(0, max(0, n_total - 1))
-    
-    # Set x-axis ticks with year-month labels (yyyy-mm format)
-    tick_positions = np.linspace(0, n_total - 1, min(12, n_total), dtype=int)
-    tick_labels = []
-    for i in tick_positions:
-        date_val = date_index[i]
-        if hasattr(date_val, 'strftime'):
-            tick_labels.append(date_val.strftime('%Y-%m'))
-        else:
-            tick_labels.append(str(date_val)[:7])
-    axes[0].set_xticks(tick_positions)
-    axes[0].set_xticklabels(tick_labels, rotation=45, ha='right')
-
-    # Annotate number of zero months in the plot area (visible summary)
-    axes[0].text(
-        0.01,
-        0.105,
-        f"Zero months: {n_zeros} / {n_total}",
-        transform=axes[0].transAxes,
-        fontsize=10,
-        verticalalignment="top",
-        color="red",
-    )
-
-    # Bottom subplot: histogram of the observed (positive) counts only
-    axes[1].hist(nonzero.values, bins=bins, color="steelblue", edgecolor="white")
-    axes[1].set_title(f"{column} - Distribution of Non-Zero Counts")
-    axes[1].set_xlabel("Count")
-    axes[1].set_ylabel("Frequency")
-
-    # Summary annotation on the histogram: show non-zero sample size and mean
-    axes[1].text(
-        0.98, 0.95,                              # X near right, Y near top
-        (f"Non-zero months: {len(nonzero)}\n"
-        f"Mean: {stats['mean_nonzero']:,.1f}"   # Added comma for large numbers
-        if stats["mean_nonzero"] is not None else "No non-zero months"),
-        transform=axes[1].transAxes,
-        fontsize=10,
-        fontfamily='monospace',                  # Keeps numbers and colons aligned
-        verticalalignment="top",
-        horizontalalignment="right",
-        bbox=dict(boxstyle='round', facecolor='white', alpha=0.7) # Added background for readability
-    )
-    # axes[1].text(
-    #     0.99,
-    #     0.105,
-    #     f"Non-zero months: {len(nonzero)}\nMean: {stats['mean_nonzero']:.1f}" if stats["mean_nonzero"] is not None else "No non-zero months",
-    #     transform=axes[1].transAxes,
-    #     fontsize=10,
-    #     verticalalignment="top",
-    #     horizontalalignment="right",
-    # )
-
-    plt.tight_layout()
-    if show:
-        plt.show()
-
-    # Return the series, computed stats, and figure/axes for tests or further use
-    return {
-        "series": series,
-        "stats": stats,
-        "fig": fig,
-        "axes": axes,
-    }
-
-
-# ---------------------------------------------------------------------
-# 9. Crime Coordinate Scatter Plot with Rasterization
+# 8. Crime Coordinate Scatter Plot with Rasterization
 # ---------------------------------------------------------------------
 def plot_crime_coordinates(
     data_df: pd.DataFrame, 

@@ -784,7 +784,7 @@ def _print_bootstrap_report(df, title, n1_info, n2_info, block_size, n_bootstrap
 # ========================================== ==================
 def run_era_comparison(data, era1_df, era2_df, label1="Era 1", label2="Era 2",
                        verbose=False, block_size=12, n_bootstrap=10_000,
-                       seed=1776, sparse_cats=None):
+                       seed=None, sparse_cats=None):
     """
     Runs the bootstrap test across all categories.
     Set verbose=True to trigger the formatted print output.
@@ -1323,6 +1323,7 @@ def run_boxm_test(matrices, n_permutations=10_000,
         n_perm  : int     number of permutations
         reject  : bool    True if p_perm < 0.05
     """
+
     sparse_cats = set(sparse_cats or [])
     rng         = np.random.default_rng(seed)
     era_keys    = list(matrices.keys())
@@ -2412,6 +2413,7 @@ def run_pca_analysis(clr_era, chosen_clr, sparse_cats,
     # 1. PREPARE DATA MATRICES
     # ------------------------------------------------------------
     # Remove sparse categories - keep only dense columns
+    sparse_cats = list(set(sparse_cats))
     dense_cols   = [c for c in chosen_clr.columns
                     if c not in sparse_cats]
     joint_matrix = chosen_clr[dense_cols]
@@ -2429,7 +2431,7 @@ def run_pca_analysis(clr_era, chosen_clr, sparse_cats,
 
     for era_label, clr_key in era_map.items():
         if clr_key in clr_era:
-            mat                  = clr_era[clr_key][dense_cols]
+            mat  = clr_era[clr_key][dense_cols]
             era_matrices[era_label] = mat
             # Map each row index to its era for centroid computation
             for idx in mat.index:
