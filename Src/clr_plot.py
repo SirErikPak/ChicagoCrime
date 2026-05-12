@@ -5,12 +5,11 @@ from matplotlib.lines import Line2D
 from scatterd import scatterd
 import matplotlib.patches as mpatches
 from matplotlib.ticker import FuncFormatter
-from typing import Mapping, Dict, Any, Tuple
+from typing import Mapping, Dict, Any, Tuple, Optional
 import seaborn as sns
 from sklearn.decomposition import PCA
 from numpy.linalg import norm
 from scipy.linalg import subspace_angles
-
 
 # ---------------------------------------------------------------------
 # 0. Fancy PCA Plot Bundle
@@ -20,9 +19,9 @@ def fancy_pca_plot_bundle(results: Mapping[float, pd.DataFrame],
                           image_save: str = None, image_path: str = None,
                           point_size: int=90, font_size: int=14):
     """
-    Generate a seamless, presentation‑quality PCA visualization with:
+    Generate a seamless, presentation-quality PCA visualization with:
         • KDE density background (vlag colormap)
-        • Era‑colored scatter overlays
+        • Era-colored scatter overlays
         • Programmatic background color matching (no white corners)
         • Clean axis labeling with variance ratios
         • Automatic era assignment from timestamps
@@ -230,13 +229,13 @@ def plot_three_pc_loadings(
     and modern visualization aesthetics.
 
     This function:
-    - Optionally excludes user‑specified features before PCA
-    - Fits PCA to CLR‑transformed data (all components, but only PC1–PC3 are plotted)
+    - Optionally excludes user-specified features before PCA
+    - Fits PCA to CLR-transformed data (all components, but only PC1–PC3 are plotted)
     - Normalizes the sign of each component using a robust rule:
         * If the feature with the largest absolute loading is negative,
           the entire component (loadings + scores) is flipped.
       This ensures consistent orientation across runs, epsilons, and datasets.
-    - Orders features by PC1 loading to create a stable shared y‑axis
+    - Orders features by PC1 loading to create a stable shared y-axis
     - Produces three aligned horizontal bar charts (PC1, PC2, PC3)
     - Returns raw loadings, normalized loadings, PC coordinates, variance ratios,
       singular values, and excluded features.
@@ -244,15 +243,15 @@ def plot_three_pc_loadings(
     Parameters
     ----------
     clr_data : pd.DataFrame
-        CLR‑transformed feature table (samples × features).
+        CLR-transformed feature table (samples × features).
     chosen_eps : float
         Epsilon value used for annotation and manifest printing.
     exclude_features : list, optional
         List of feature names to drop before PCA.
     figsize : tuple
-        Figure size for the 3‑panel layout.
+        Figure size for the 3-panel layout.
     label_fmt : str
-        Format string for bar‑label numeric annotations.
+        Format string for bar-label numeric annotations.
     verbose : bool
         Whether to print a PCA manifest summary.
     image_save : str, optional
@@ -264,7 +263,7 @@ def plot_three_pc_loadings(
         {
             "figure": matplotlib Figure,
             "loadings_raw": raw PCA loadings (before sign normalization),
-            "loadings_norm": sign‑aligned loadings,
+            "loadings_norm": sign-aligned loadings,
             "coords_raw": raw PC scores,
             "coords_norm": normalized PC scores,
             "variance_ratio": explained variance ratios,
@@ -311,7 +310,7 @@ def plot_three_pc_loadings(
     ratios = pca.explained_variance_ratio_                # Variance explained
     observation_index = working_data.index.values         # Sample identifiers
 
-    # Note: The PCA is fitted to the CLR‑transformed data, and the raw loadings and scores are extracted.
+    # Note: The PCA is fitted to the CLR-transformed data, and the raw loadings and scores are extracted.
     loadings_norm = []
     coords_norm   = []
 
@@ -723,13 +722,13 @@ def plot_pca_results(
     """
     Visualize PCA sensitivity across multiple epsilon values.
 
-    Produces a two‑panel diagnostic figure comparing:
+    Produces a two-panel diagnostic figure comparing:
       • The singular value spectrum across eps values
       • The cumulative variance explained across eps values
 
     The function automatically determines the target number of components
     either by:
-      (A) user‑specified k_components, or
+      (A) user-specified k_components, or
       (B) the smallest k such that cumulative variance ≥ threshold_var.
 
     The selected k is highlighted on both panels with vertical and
@@ -794,7 +793,7 @@ def plot_pca_results(
     else:
         target_k = 3
     # Note: The target number of components (k) is determined based on either a 
-    # user‑specified value or a variance threshold. If k_components is provided, 
+    # user-specified value or a variance threshold. If k_components is provided, 
     # it is used directly. Otherwise, the function computes the cumulative variance 
     # explained by the components and selects the smallest k such that the cumulative 
     # variance meets or exceeds the specified threshold (default 80%). This dynamic 
@@ -878,7 +877,7 @@ def plot_pca_results(
             yticks = [t for t in yticks if abs(t - var_at_k) > 0.04]
             ax.set_yticks(sorted(yticks + [var_at_k]))
 
-        # Ensure target_k is included in x‑ticks
+        # Ensure target_k is included in x-ticks
         xticks = sorted(list(set(list(ax.get_xticks()) + [target_k])))
         ax.set_xticks([t for t in xticks if t >= 0])
 
@@ -1177,7 +1176,7 @@ expressed in CLR (centered log-ratio) coordinates. It includes:
 - Total Aitchison variance across all CLR dimensions
 - Variance ratio explained by the first principal component (PC1)
 - A convenience routine to compute these metrics across multiple
-  epsilon‑thresholded CLR datasets
+  epsilon-thresholded CLR datasets
 
 All functions assume inputs are NumPy arrays or pandas DataFrames
 containing valid finite CLR-transformed values.
@@ -1549,16 +1548,16 @@ def plot_crime_counts(
     show: bool = True,
 ) -> Dict[str, Any]:
     """
-    Plot monthly crime counts using a modern “data‑journalism” visual style.
+    Plot monthly crime counts using a modern “data-journalism” visual style.
 
-    This function produces a two‑panel figure:
+    This function produces a two-panel figure:
     1. **Trend Plot (Top)** — A line chart showing the monthly trajectory of a
-       selected crime category, with a status‑bar annotation summarizing:
-       - number of zero‑count months
+       selected crime category, with a status-bar annotation summarizing:
+       - number of zero-count months
        - total time span
 
     2. **Distribution Plot (Bottom)** — A histogram (with KDE overlay) of all
-       non‑zero monthly counts, including a compact statistical summary:
+       non-zero monthly counts, including a compact statistical summary:
        - mean
        - median
        - maximum observed count
@@ -1566,7 +1565,7 @@ def plot_crime_counts(
     The design emphasizes:
     - consistent typography across panels
     - aligned “status bar” annotations
-    - clean, minimalistic styling suitable for reports or journalism‑style graphics
+    - clean, minimalistic styling suitable for reports or journalism-style graphics
 
     Parameters
     ----------
@@ -1733,3 +1732,247 @@ def plot_crime_counts(
         plt.show()
 
     return {"series": series, "fig": fig}
+
+# ---------------------------------------------------------------------------
+# 7. Structural break visualization with a three-panel diagnostic layout
+# ---------------------------------------------------------------------------
+def plot_structural_break(
+    clr_df: pd.DataFrame,
+    category: str,
+    break_date: str,
+    window: int = 12,
+    za_stat: Optional[float] = None,
+    za_p_adj: Optional[float] = None,
+    era_boundaries: Optional[Dict[str, str]] = None,
+    save_path: Optional[str] = None,
+    verbose: bool = True
+) -> None:
+    """
+    Visualize a structural break in a CLR-transformed crime time series using
+    a three-panel diagnostic layout.
+
+    The figure includes:
+    1. **Time-Series Panel**  
+       - Raw CLR signal  
+       - Pre- and post-break means  
+       - Rolling mean (default 12 months)  
+       - Annotated break point (e.g., Zivot–Andrews)  
+       - Optional background “era” shading (e.g., Pre-COVID / COVID / Post-COVID)
+
+    2. **Distribution Panel**  
+       - Density comparison of pre- vs post-break CLR values  
+       - Histogram + KDE overlays for both segments
+
+    3. **Footer Panel**  
+       - Compact summary of ZA statistic, adjusted p-value, and decision status
+
+    Parameters
+    ----------
+    clr_df : pd.DataFrame
+        DataFrame indexed by datetime, containing CLR-transformed crime series.
+    category : str
+        Column name in `clr_df` to analyze.
+    break_date : str
+        Date string (YYYY-MM or YYYY-MM-DD) marking the structural break.
+    window : int, default 12
+        Rolling window size for smoothing the time series.
+    za_stat : float, optional
+        Zivot–Andrews test statistic for the break point.
+    za_p_adj : float, optional
+        Adjusted p-value for the ZA test. If missing or NaN, the break is
+        treated as statistically unreliable.
+    era_boundaries : dict, optional
+        Mapping of era labels → boundary dates. Used to draw background shading.
+        Example:
+            {"pre": "2020-03", "covid": "2021-06"}
+    save_path : str, optional
+        If provided, saves the figure to this path.
+    verbose : bool, default True
+        Whether to print a terminal summary of segment statistics.
+
+    Returns
+    -------
+    None
+        The function displays the figure and optionally saves it.
+    """
+    import matplotlib as mpl
+    mpl.rcParams['font.family'] = 'DejaVu Sans'
+    mpl.rcParams['font.sans-serif'] = ['DejaVu Sans']
+    # ------------------------------------------------------------
+    # 7-1. DATA PREPARATION
+    # ------------------------------------------------------------
+    series = clr_df[category]
+    break_dt = pd.Timestamp(break_date)
+
+    # Split into pre- and post-break segments
+    pre_full = series[:break_dt]
+    post_full = series[break_dt:]
+
+    # Basic descriptive statistics
+    stats_pre = pre_full.agg(['mean', 'std', 'count'])
+    stats_post = post_full.agg(['mean', 'std', 'count'])
+    delta = stats_post['mean'] - stats_pre['mean']
+
+    # Rolling mean for trend smoothing
+    series_rolling = series.rolling(window=window, center=True).mean()
+    # Format ZA statistic and p-value for display
+    za_f = f"{za_stat:.3f}" if za_stat is not None else "0.000"
+    sparse = (za_p_adj is None) or pd.isna(za_p_adj)
+    # If the p-value is missing or NaN, we treat it as unreliable 
+    # due to sparse data, and display "N/A (SPARSE)" instead of a 
+    # numeric value. The status is also marked as "UNRELIABLE (SPARSE)" 
+    # in this case. Otherwise, we display the adjusted p-value and determine 
+    # whether to reject or fail to reject the null hypothesis based on the 0.05 threshold. 
+    p_val_disp = "N/A (SPARSE)" if sparse else f"{za_p_adj:.4f}"
+    status = ("UNRELIABLE (SPARSE)" if sparse else (r"REJECT $H_0$" if za_p_adj < 0.05 else "FAIL TO REJECT"))
+    # ------------------------------------------------------------
+    # 7-2. TERMINAL REPORT (OPTIONAL)
+    # ------------------------------------------------------------
+    if verbose:
+        print(f"\n{'='*85}")
+        print(f"{f' STRUCTURAL BREAK DIAGNOSTIC: {category} ':^85}")
+        print(f"{'='*85}")
+        print(f"  ▶ BREAK POINT     : {break_dt.strftime('%Y-%m')}")
+        print(f"  ▶ ZA STATISTIC    : {za_f}")
+        print(f"  ▶ ADJ P-VALUE     : {p_val_disp} | STATUS: {status.replace('$H_0$', 'H₀')}")
+
+        # Segment summary table
+        stats_df = pd.DataFrame(
+            {"PRE-BREAK": pre_full.describe(),
+             "POST-BREAK": post_full.describe()}
+        ).T[["count", "mean", "std", "min", "max"]]
+
+        print(f"\n  [ SEGMENT STATISTICS ]")
+        print("  " + stats_df.to_string().replace("\n", "\n  "))
+        print(f"\n  ▶ MEAN SHIFT (Δ)  : {delta:+.4f}")
+        print(f"{'='*85}\n")
+
+    # ------------------------------------------------------------
+    # 7-3. FIGURE LAYOUT
+    # ------------------------------------------------------------
+    sns.set_theme(style="white", context="paper")
+    fig = plt.figure(figsize=(18, 14))
+
+    # Three-panel layout: time series, distribution, footer
+    gs = fig.add_gridspec(3, 1, height_ratios=[1.2, 0.8, 0.05], hspace=0.55)
+    ax_ts = fig.add_subplot(gs[0])
+    ax_dist = fig.add_subplot(gs[1])
+    ax_footer = fig.add_subplot(gs[2])
+    ax_footer.axis("off")
+
+    # ------------------------------------------------------------
+    # 7-3A. OPTIONAL ERA BACKGROUND SHADING
+    # ------------------------------------------------------------
+    era_proxies = []
+    if era_boundaries:
+        bg_colors = ["#DDE4FF", "#FFE4E6", "#DCFCE7"]
+        sorted_eras = sorted(era_boundaries.items(), key=lambda x: pd.Timestamp(x[1]))
+
+        # Pre-COVID
+        ax_ts.axvspan(series.index[0], pd.Timestamp(sorted_eras[0][1]),
+                      color=bg_colors[0], alpha=1.0, zorder=0)
+        era_proxies.append(plt.Rectangle((0, 0), 1, 1, fc=bg_colors[0], label="Era: Pre-COVID"))
+
+        # COVID
+        ax_ts.axvspan(pd.Timestamp(sorted_eras[0][1]), pd.Timestamp(sorted_eras[1][1]),
+                      color=bg_colors[1], alpha=1.0, zorder=0)
+        era_proxies.append(plt.Rectangle((0, 0), 1, 1, fc=bg_colors[1], label="Era: COVID"))
+
+        # Post-COVID
+        ax_ts.axvspan(pd.Timestamp(sorted_eras[1][1]), series.index[-1],
+                      color=bg_colors[2], alpha=1.0, zorder=0)
+        era_proxies.append(plt.Rectangle((0, 0), 1, 1, fc=bg_colors[2], label="Era: Post-COVID"))
+
+    # ------------------------------------------------------------
+    # 7-3B. TIME-SERIES PANEL
+    # ------------------------------------------------------------
+    ax_ts.grid(True, axis="both", color="#D1D5DB", linestyle="--", linewidth=0.8, zorder=1)
+
+    # Raw CLR signal
+    ax_ts.plot(series.index, series.values, color="#374151", linewidth=0.6, alpha=0.3, zorder=2)
+    raw_proxy = plt.Line2D([0], [0], color="#374151", linewidth=0.8, alpha=0.9, label="Raw CLR Signal")
+
+    # Pre- and post-break means
+    ax_ts.hlines(stats_pre["mean"], series.index[0], break_dt,
+                 color="#064E3B", linewidth=2.0, label="Pre-Break Mean", zorder=3)
+    ax_ts.hlines(stats_post["mean"], break_dt, series.index[-1],
+                 color="#7F1D1D", linewidth=2.0, label="Post-Break Mean", zorder=3)
+
+    # Rolling mean
+    roll_line = ax_ts.plot(series_rolling.index, series_rolling.values,
+                           color="#1E3A8A", linewidth=2.5, label="12m Rolling Mean", zorder=10)
+
+    # Break point
+    ax_ts.axvline(break_dt, color="#991B1B", linestyle="-", linewidth=1.5,
+                  label="ZA Break Point", zorder=11)
+    ax_ts.text(break_dt, ax_ts.get_ylim()[1], f" {break_dt.strftime('%Y-%m')}",
+               color="#991B1B", fontweight="900", fontsize=11, va="bottom", zorder=12)
+
+    # Annotated mean shift
+    y_mid = (stats_pre["mean"] + stats_post["mean"]) / 2
+    ax_ts.annotate(
+        f"Δ Shift: {delta:+.3f}",
+        xy=(break_dt, y_mid),
+        xytext=(-30, 0),
+        textcoords="offset points",
+        arrowprops=dict(arrowstyle="->", color="#991B1B", lw=1.5),
+        fontsize=13, fontweight="900", color="#991B1B",
+        ha="right", va="center",
+        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="#D1D5DB", lw=0.5),
+        zorder=100
+    )
+
+    # Titles and ticks
+    ax_ts.set_title(category.upper(), loc="left", fontsize=20, fontweight="900", pad=35)
+    ax_ts.set_xlabel("YEAR-MONTH", fontsize=10, fontweight="bold")
+    ax_ts.set_ylabel("CLR INTENSITY", fontsize=10, fontweight="bold")
+
+    tick_pos = np.linspace(0, len(series) - 1, 10, dtype=int)
+    ax_ts.set_xticks(series.index[tick_pos])
+    ax_ts.set_xticklabels([d.strftime("%Y-%m") for d in series.index[tick_pos]],
+                          fontsize=9, fontweight="bold")
+
+    # Legend
+    ax_ts.legend(
+        handles=era_proxies + [raw_proxy] + roll_line +
+                [plt.Line2D([], [], color="#064E3B", label="Pre-Break Mean"),
+                 plt.Line2D([], [], color="#7F1D1D", label="Post-Break Mean"),
+                 plt.Line2D([], [], color="#991B1B", label="ZA Break Point")],
+        loc="upper left", bbox_to_anchor=(1.02, 1),
+        frameon=True, framealpha=1.0, edgecolor="#D1D5DB", fontsize=9
+    )
+
+    # ------------------------------------------------------------
+    # 7-3C. DISTRIBUTION PANEL
+    # ------------------------------------------------------------
+    sns.histplot(pre_full, ax=ax_dist, color="#0EA5E9", alpha=0.5, stat="density")
+    sns.kdeplot(pre_full, ax=ax_dist, color="#0369A1", linewidth=2.0, label="Pre-Break Dist")
+
+    sns.histplot(post_full, ax=ax_dist, color="#F59E0B", alpha=0.5, stat="density")
+    sns.kdeplot(post_full, ax=ax_dist, color="#B45309", linewidth=2.0, label="Post-Break Dist")
+
+    ax_dist.set_xlabel("CLR VALUE", fontsize=10, fontweight="bold")
+    ax_dist.set_ylabel("DENSITY", fontsize=10, fontweight="bold")
+
+    ax_dist.legend(
+        loc="upper left", bbox_to_anchor=(1.02, 1),
+        frameon=True, framealpha=1.0, edgecolor="#D1D5DB", fontsize=9
+    )
+
+    sns.despine(ax=ax_ts, offset=10, trim=True)
+    sns.despine(ax=ax_dist, offset=10, trim=True)
+
+    # ------------------------------------------------------------
+    # 7-3D. FOOTER PANEL
+    # ------------------------------------------------------------
+    footer_text = f"ZA STAT: {za_f}   |   P-VALUE: {p_val_disp}   |   STATUS: {status}"
+    ax_footer.text(
+        0.5, 0.5, footer_text,
+        transform=ax_footer.transAxes,
+        ha="center", va="center",
+        fontsize=11, fontweight="900", color="white",
+        bbox=dict(facecolor="#111827", edgecolor="none", boxstyle="round,pad=1.5")
+    )
+
+    plt.subplots_adjust(top=0.92, bottom=0.08, right=0.82)
+    plt.show()

@@ -195,13 +195,15 @@ def compute_era_distribution_parameters(eras_dict,
     era_stds  = pd.DataFrame(
         {name: df.std(axis=0)  for name, df in eras.items()}
     )
-
-    # Step 2 - Covariance estimation
+    # -----------------------------------------------------------------------
+    # Step 2-1: Raw sample covariance - stored for reference only, not used for inference
+    # -----------------------------------------------------------------------
     era_covs     = {}
     era_covs_lw  = {}
     lw_shrinkage = {}
     cond_numbers = {}
 
+    # Loop through eras to compute raw and LW covariance matrices, shrinkage intensity, and condition numbers
     for name, df in eras.items():
 
         # Raw sample covariance — near-singular for COVID (T/K=1.31)
@@ -229,11 +231,12 @@ def compute_era_distribution_parameters(eras_dict,
             'raw': np.linalg.cond(raw_cov.values),
             'lw' : np.linalg.cond(lw.covariance_),
         }
-
-    # Step 3 - Pairwise era differences
+    # -----------------------------------------------------------------------
+    # Step 2-2: Compute pairwise differences in means and std devs between eras
     # pairs = (subtrahend era, minuend era, output column name)
     # positive delta = metric was higher in the earlier era
     # negative delta = metric was higher in the later era
+    # -----------------------------------------------------------------------    
     pairs = [
         ("Pre-COVID", "COVID",      "Pre_minus_COVID"),
         ("COVID",     "Post-COVID", "COVID_minus_Post"),
@@ -242,8 +245,9 @@ def compute_era_distribution_parameters(eras_dict,
     for start, end, col in pairs:
         era_means[col] = era_means[start] - era_means[end]
         era_stds[col]  = era_stds[start]  - era_stds[end]
-
-    # Step 4 - Print mean and std tables
+    # -----------------------------------------------------------------------
+    # Step 2-3: Print mean and std dev tables with clear labels and formatting
+    # -----------------------------------------------------------------------
     for label, df in [("MEAN CLR VECTOR", era_means),
                        ("STD DEV",         era_stds)]:
         print("=" * 125)
@@ -252,8 +256,10 @@ def compute_era_distribution_parameters(eras_dict,
         print("=" * 125)
         print(df.round(4).to_string())
         print()
-
-    # Step 5 - Covariance matrix shapes
+    # -----------------------------------------------------------------------
+    # Step 2-4: Print covariance matrix shapes to confirm they are square and 
+    # match the number of features K
+    # -----------------------------------------------------------------------
     print("=" * 70)
     print(f"{'COVARIANCE MATRIX SHAPES':^70}")
     print("=" * 70)
@@ -261,8 +267,10 @@ def compute_era_distribution_parameters(eras_dict,
         K = cov.shape[0]
         print(f"  {name:<12}: {str(cov.shape):<12} "
               f"-> expected ({K}, {K})")
-
-    # Step 6 - Covariance stability report
+        
+    # -----------------------------------------------------------------------
+    # Step 2-5: Covariance stability report with condition numbers and shrinkage intensity
+    # -----------------------------------------------------------------------
     print()
     print("=" * 70)
     print(f"{'COVARIANCE STABILITY REPORT':^70}")
@@ -271,6 +279,7 @@ def compute_era_distribution_parameters(eras_dict,
           f"{'Shrinkage α':>12}  {'Stability':>10}")
     print(f"  {'-'*68}")
 
+    # Loop through eras to report condition numbers, shrinkage intensity, and stability flag
     for name in eras:
         cn = cond_numbers[name]
         α  = lw_shrinkage[name]
@@ -285,6 +294,7 @@ def compute_era_distribution_parameters(eras_dict,
         print(f"  {name:<12} {cn['raw']:>12.1e} {cn['lw']:>12.1f} "
               f"{α:>12.4f}  {flag:^10}")
 
+    # Interpretation guide for covariance stability report
     print("=" * 70)
     print()
     print("  Cond# Raw  : sample covariance - reference only, "
@@ -296,7 +306,9 @@ def compute_era_distribution_parameters(eras_dict,
     print("  Stability  : OK if log10(Cond# LW) < 8  "
           "(>7 digits of precision retained)")
 
-    # Step 7 - Top shifts ranked by absolute magnitude
+    # -----------------------------------------------------------------------
+    # Step 2-6: Top shifts ranked by absolute magnitude
+    # -----------------------------------------------------------------------
     if top_display:
 
         def _print_top(df, delta_col, section_label, era_label):
@@ -321,6 +333,8 @@ def compute_era_distribution_parameters(eras_dict,
             "Pre_minus_Post"  : "Pre-COVID -> Post-COVID",
         }
 
+        # Print mean shifts first, then volatility shifts, with clear section 
+        # headers and interpretation notes
         print("\n" + "=" * 70)
         print(f"TOP {n_rows} MEAN SHIFTS")
         print("=" * 70)
@@ -330,10 +344,11 @@ def compute_era_distribution_parameters(eras_dict,
         print("This highlights which crime types had the "
               "largest distributional shifts.")
         print(f"{'-' * 70}\n")
-
+        # Loop through the same pairs to print mean shifts and std dev shifts with appropriate labels
         for _, _, col in pairs:
             _print_top(era_means, col, "MEAN SHIFTS", era_labels[col])
-
+        # Volatility shifts are differences in std dev, so we use era_stds and 
+        # update the section label accordingly
         print("\n" + "=" * 70)
         print(f"TOP {n_rows} VOLATILITY SHIFTS")
         print("=" * 70)
@@ -344,7 +359,8 @@ def compute_era_distribution_parameters(eras_dict,
         print("This highlights which crime types had the "
               "largest volatility shifts.")
         print(f"{'-' * 70}\n")
-
+        # Print volatility shifts using the same loop structure 
+        # but with era_stds and updated section label
         for _, _, col in pairs:
             _print_top(era_stds, col, "VOLATILITY SHIFTS", era_labels[col])
 
@@ -366,19 +382,24 @@ def plot_era_heatmaps(data_dict, stat_type='mean', save_image=None, verbose=Fals
     Consolidated function to plot either Mean or Volatility heatmaps.
     stat_type: 'mean' or 'std'
     """
-    # 1. Setup based on stat type
+    # -----------------------------------------------------------------------
+    # 3-1: Configuration based on stat_type
+    # -----------------------------------------------------------------------
     is_mean = stat_type == 'mean'
     df_key = 'era_means' if is_mean else 'era_stds'
     title_main = 'Mean CLR' if is_mean else 'CLR Volatility'
     cmap_base = 'RdBu_r' if is_mean else 'YlOrRd'
     unit_label = 'CLR Mean' if is_mean else 'CLR Std Dev'
-    
-    # 2. Sorting
+    # -----------------------------------------------------------------------    
+    # 3-2: Data Preparation - Sort by absolute magnitude of Pre-COVID -> COVID shift
+    # -----------------------------------------------------------------------
     # Reindex based on the absolute magnitude of the Pre-COVID -> COVID shift
     sort_idx = data_dict[df_key]['Pre_minus_COVID'].abs().sort_values(ascending=False).index
     df_sorted = data_dict[df_key].reindex(sort_idx)
     
-    # 3. Define Subplot Configurations
+    # -----------------------------------------------------------------------
+    #3-3: Plot Configuration - Titles, labels, and color maps based on stat_type
+    # -----------------------------------------------------------------------
     stat_type = stat_type.upper()
     plot_configs = [
         (['Pre-COVID', 'COVID', 'Post-COVID'], f'{title_main} per Era', unit_label, cmap_base),
@@ -386,14 +407,15 @@ def plot_era_heatmaps(data_dict, stat_type='mean', save_image=None, verbose=Fals
         (['COVID_minus_Post'], f'{stat_type} Shift\nCOVID -> Post', 'Δ CLR', 'RdBu_r'),
         (['Pre_minus_Post'], f'{stat_type} Shift\nPre -> Post', 'Δ CLR', 'RdBu_r')
     ]
-
-    # 4. Plotting Loop
+    # -----------------------------------------------------------------------
+    # 3-4: Plotting - Loop through configurations to create heatmaps with appropriate color maps and annotations
+    # -----------------------------------------------------------------------
     fig, axes = plt.subplots(1, 4, figsize=(26, 10), gridspec_kw={'width_ratios': [3, 1, 1, 1]})
-    
+    # Loop through each subplot configuration to create heatmaps
     for ax, (cols, title, label, cmap) in zip(axes, plot_configs):
         # Use center=0 for shift plots (RdBu_r), but ignore center for raw Volatility (YlOrRd)
         center_val = 0 if 'minus' in "".join(cols) or is_mean else None
-        
+        # Plot heatmap with annotations, appropriate color map, and centered at 0 for shifts
         sns.heatmap(
             df_sorted[cols],
             ax=ax,
@@ -414,20 +436,96 @@ def plot_era_heatmaps(data_dict, stat_type='mean', save_image=None, verbose=Fals
     )
     
     plt.tight_layout()
-    
+    # Save the figure if requested
     if save_image:
         fname = f"{save_image}clr_{stat_type}_heatmap.png"
         plt.savefig(fname, dpi=300, bbox_inches='tight')
     
     plt.show()
-
+    # Print sorted DataFrame if verbose
     if verbose:
         print(f"\n{title_main} Sorted by |Pre_minus_COVID|:")
         print(df_sorted.round(3).to_string())
 
+# -----------------------------------------------------------------------------
+# 4. Function to run stationarity analysis with harmonized conclusions and multiple testing correction
+# -----------------------------------------------------------------------------
+def run_stationarity_analysis(clr_df, filled_df, era_boundaries=None, seasonal_cycle=12,
+                              sparse_threshold=0.05, verbose=True):
+    """
+    Orchestrates the stationarity testing suite:
+    1. Identifies sparse categories based on raw crime counts.
+    2. Runs a suite of unit-root and structural break tests (ADF, KPSS, ZA).
+    3. Applies BH-FDR correction to p-values for multiple testing.
+    4. Harmonizes results into a final stationarity conclusion.
+    """
+    # Validate era_boundaries input
+    if era_boundaries is None:
+        raise ValueError("era_boundaries dict required (Pre-COVID, COVID, Post-COVID keys).")
+    # ------------------------------------------------------------------------
+    # 4-1 Sparsity Assessment - Identify categories with high zero rates in raw crime counts
+    # -------------------------------------------------------------------------
+    # Efficiently calculate zero rates for all crime types
+    zero_rates = (filled_df.groupby('fbi_code_desc', observed=True)['crime_count']
+                  .apply(lambda x: (x == 0).mean()))
+    sparse_cats = zero_rates[zero_rates > sparse_threshold].index.tolist()
+
+    # ------------------------------------------------------------------------
+    # 4-2. Run stationarity tests for each crime type's CLR series with error handling for sparse data
+    # -------------------------------------------------------------------------
+    # Note: If clr_df.columns is large, consider using joblib or multiprocessing here
+    results = [
+        _run_single_stationarity_test(
+            col, 
+            clr_df[col].values, 
+            is_sparse=(col in sparse_cats), 
+            zero_rate=zero_rates.get(col, 0.0), 
+            index=clr_df.index,
+            seasonal_cycle=seasonal_cycle
+        ) 
+        for col in clr_df.columns
+    ]
+    # Convert results to DataFrame for easier manipulation and reporting
+    stat_df = pd.DataFrame(results).set_index('crime')
+
+    # ------------------------------------------------------------------------
+    # 4-3. Multiple Testing Correction - Apply BH-FDR correction to p-values for dense categories 
+    # only to avoid biasing the FDR with unreliable sparse category results
+    # -------------------------------------------------------------------------
+    # Only apply correction to 'dense' categories to avoid biasing the FDR
+    dense_mask = ~stat_df['is_sparse']
+    for p_col in ['adf_p', 'za_p']:
+        adj_col = f"{p_col}_adj"
+        stat_df[adj_col] = np.nan  # Initialize with NaN
+        
+        # Pull p-values for dense categories, drop any NaNs from failed tests
+        p_vals = stat_df.loc[dense_mask, p_col].dropna()
+
+        # Only apply correction if there are valid p-values to adjust
+        if not p_vals.empty:
+            _, p_adj, _, _ = multipletests(p_vals, method='fdr_bh')
+            # Map adjusted p-values back to the correct rows
+            stat_df.loc[p_vals.index, adj_col] = p_adj
+    # ------------------------------------------------------------------------
+    # 4-4. Harmonization Logic - Evaluate conclusions based on test results with sensitivity f
+    # lagging for trend-sensitive break points
+    # -------------------------------------------------------------------------
+    concl_cols = ['adf_kpss', 'za_conclusion', 'agreement']
+    conclusions = stat_df.apply(_evaluate_conclusion, axis=1)
+    stat_df[concl_cols] = pd.DataFrame(conclusions.tolist(), index=stat_df.index)
+
+    # ------------------------------------------------------------------------
+    # 4-5. Reporting - Print comprehensive stationarity report with clear formatting and 
+    # interpretation notes
+    # ------------------------------------------------------------------------
+    if verbose:
+        _print_stationarity_report(stat_df, sparse_cats, zero_rates, 
+                                   era_boundaries, seasonal_cycle, sparse_threshold)
+
+    return stat_df 
 
 # -----------------------------------------------------------------------------
-# 4. Function to run stationarity tests on each crime type's time series
+# Helper Function 4-A to run stationarity tests on each crime type's time series
 # ------------------------------------------------------------------------------
 def _run_single_stationarity_test(col_name, series, is_sparse, 
                                   zero_rate, index, seasonal_cycle):
@@ -494,6 +592,10 @@ def _run_single_stationarity_test(col_name, series, is_sparse,
             'bp_diff_months': bp_diff,
         }
 
+
+# -----------------------------------------------------------------------------
+# Helper Function 4-B to evaluate conclusions based on test results with harmonization logic
+# -----------------------------------------------------------------------------
 def _evaluate_conclusion(row):
     """Logic to harmonize ADF, KPSS, and ZA results with sensitivity flagging."""
     if row['is_sparse']:
@@ -504,8 +606,9 @@ def _evaluate_conclusion(row):
     adf_rej = row['adf_p_adj'] < alpha
     kpss_rej = row['kpss_p'] < alpha
     za_rej = row['za_p_adj'] < alpha
-
-    # 1. ADF + KPSS Standard Harmonization
+    # -----------------------------------------------------------------------
+    # 1-B-1: ADF + KPSS Logic (Standard Unit Root Tests)
+    # ------------------------------------------------------------------------
     if not adf_rej and kpss_rej:
         adf_kpss = 'Non-Stationary'
     elif adf_rej and not kpss_rej:
@@ -514,12 +617,15 @@ def _evaluate_conclusion(row):
         adf_kpss = 'Trend-Stationary'
     else:
         adf_kpss = 'Inconclusive'
-
-    # 2. Zivot-Andrews Logic (Handles Structural Breaks)
+    # -----------------------------------------------------------------------
+    # Helper Function 1-B-2: Zivot-Andrews Logic (Handles Structural Breaks)
     # If ZA is stationary but ADF is not, the break was the cause of ADF failure.
+    # ------------------------------------------------------------------------
     za_conclusion = 'Stationary (ZA)' if za_rej else 'Non-Stationary (ZA)'
 
-    # 3. Final Agreement & Flagging
+    # -----------------------------------------------------------------------
+    # 1-B-3: Harmonization Logic with Sensitivity Flagging
+    # -----------------------------------------------------------------------
     if adf_kpss == 'Non-Stationary' and za_conclusion == 'Non-Stationary (ZA)':
         agreement = 'Agree - Non-Stationary'
     elif adf_kpss in ['Stationary', 'Trend-Stationary'] and za_conclusion == 'Stationary (ZA)':
@@ -537,14 +643,17 @@ def _evaluate_conclusion(row):
 
     return adf_kpss, za_conclusion, agreement
 
-
+# -------------------------------------------------------------------------------
+# Helper Function 4-C to print a comprehensive stationarity report with improved formatting and alignment
+# -----------------------------------------------------------------------
 def _print_stationarity_report(df, sparse_cats, zero_rates, era_boundaries, seasonal_cycle, sparse_threshold):
     """Standardized console output for stationarity analysis with improved alignment."""
     
     dense_df = df[~df['is_sparse']]
     n_total, n_sparse = len(df), len(sparse_cats)
-    
-    # 1. Header and Sparse Summary
+    # -----------------------------------------------------------------------
+    # 4-C-1: Summary of Sparse vs Dense Categories with clear formatting and interpretation notes
+    # -----------------------------------------------------------------------
     print("=" * 70)
     print(f"STATIONARITY ANALYSIS: {n_total:>5} Categories {'|':>5} {n_sparse:>5} Sparse Excluded")
     print("=" * 70)
@@ -556,18 +665,22 @@ def _print_stationarity_report(df, sparse_cats, zero_rates, era_boundaries, seas
         print(f"  {cat:<50}: {zero_rates[cat]:<5.1%} zeros  ⚠️")
     print("-" * 70)
 
-    # 2. Aggregated Conclusion Counts
+    # -----------------------------------------------------------------------
+    # 4-C-2: Conclusion Counts with clear section headers and interpretation notes
+    # -----------------------------------------------------------------------
     sections = [
         ("CONCLUSION COUNTS - ADF + KPSS", 'adf_kpss'),
         ("CONCLUSION COUNTS - Zivot-Andrews 'ct'", 'za_conclusion'),
         ("AGREEMENT - ADF/KPSS vs Zivot-Andrews", 'agreement')
     ]
-    
+    # Loop through each section to print value counts with clear headers and formatting
     for title, col in sections:
         print(f"\n{title}:")
         print(dense_df[col].value_counts().to_string())
-
-    # 3. Trend-Sensitive Categories
+    # -----------------------------------------------------------------------
+    # 4-C-3: Trend-Sensitive Break Points - Highlight cases where ZA break points differ by
+    #  more than the seasonal cycle, indicating potential sensitivity to break date selection
+    # -----------------------------------------------------------------------
     print(f"\n" + "=" * 70)
     print(f"TREND-SENSITIVE (Break divergence > {seasonal_cycle} months)")
     print("=" * 70)
@@ -580,8 +693,10 @@ def _print_stationarity_report(df, sparse_cats, zero_rates, era_boundaries, seas
             'za_date': "Break 'ct'", 'za_date_c': "Break 'c'", 'bp_diff_months': 'Diff'
         })
         print(report.to_string())
-
-    # 4. Disagreement Detail
+    # -----------------------------------------------------------------------
+    # 4-C-4: Highlight cases where ADF/KPSS and ZA conclusions diverge, with clear 
+    # formatting and alignment for readability
+    # -----------------------------------------------------------------------
     dis_df = dense_df[dense_df['agreement'] == 'Disagree']
     if not dis_df.empty:
         print(f"\n" + "=" * 70 + "\nDISAGREEMENT DETAIL\n" + "=" * 70)
@@ -591,102 +706,39 @@ def _print_stationarity_report(df, sparse_cats, zero_rates, era_boundaries, seas
             print(f"    {'ZA (ct)':<12}: {row['za_conclusion']:<15} break = {row['za_date']:<10} p_adj = {row['za_p_adj']:>8.4f}")
             print(f"    {'ZA (c)':<12}: {'':<15} break = {row['za_date_c']:<10} p_c   = {row['za_p_c']:>8.4f}")
             print(f"    {'Note':<12}: zero_rate = {row['zero_rate']:.4f} (Quasi-sparse)")
-
-    # 5. Break Date Alignment
+    # -----------------------------------------------------------------------
+    # 1-C-5: Break Date Alignment - Assess how many categories have ZA break points that align with the defined 
+    # COVID era boundaries, with clear formatting and interpretation notes
+    # -----------------------------------------------------------------------
     print(f"\n" + "=" * 70 + "\nBREAK DATE ALIGNMENT (Primary 'ct' Model)\n" + "=" * 70)
     
-    # Resolve boundaries
+    # Define COVID era boundaries based on provided era_boundaries dict
     c_start = pd.Timestamp(era_boundaries['Pre-COVID']) + pd.DateOffset(months=1)
     c_end   = pd.Timestamp(era_boundaries['COVID'])
     
-    # Efficient classification using list comprehensions or value_counts on categories
+    # Helper function to classify break dates into Pre-COVID, COVID-aligned, or Post-COVID based on era boundaries
     def get_era_label(d_str):
         dt = pd.Timestamp(d_str + '-01')
         if dt < c_start: return 'Pre-COVID'
         if dt <= c_end:  return 'COVID-aligned'
         return 'Post-COVID'
 
-    # Create a temporary series for counting
+    # Calculate the distribution of break date alignments and print the counts with clear labels and formatting
     alignment = dense_df['za_date'].apply(get_era_label).value_counts()
     
+    # Interpretation note for break date alignment
     bounds_info = [
         (f"COVID-aligned ({c_start.strftime('%Y-%m')} to {c_end.strftime('%Y-%m')})", 'COVID-aligned'),
         (f"Pre-COVID (before {c_start.strftime('%Y-%m')})", 'Pre-COVID'),
         (f"Post-COVID (after {c_end.strftime('%Y-%m')})", 'Post-COVID')
     ]
-
+    # Print the break date alignment results with clear formatting and interpretation notes
     for label, key in bounds_info:
         count = alignment.get(key, 0)
         print(f"  {label:<40} : {count:>3} of {len(dense_df)}")
 
-
-def run_stationarity_analysis(clr_df, filled_df, era_boundaries=None, seasonal_cycle=12,
-                              sparse_threshold=0.05, verbose=True):
-    """
-    Orchestrates the stationarity testing suite:
-    1. Identifies sparse categories based on raw crime counts.
-    2. Runs a suite of unit-root and structural break tests (ADF, KPSS, ZA).
-    3. Applies BH-FDR correction to p-values for multiple testing.
-    4. Harmonizes results into a final stationarity conclusion.
-    """
-    # Validate era_boundaries input
-    if era_boundaries is None:
-        raise ValueError("era_boundaries dict required (Pre-COVID, COVID, Post-COVID keys).")
-
-    # 1. Sparse Identification
-    # Efficiently calculate zero rates for all crime types
-    zero_rates = (filled_df.groupby('fbi_code_desc', observed=True)['crime_count']
-                  .apply(lambda x: (x == 0).mean()))
-    sparse_cats = zero_rates[zero_rates > sparse_threshold].index.tolist()
-
-    # 2. Parallelizable Test Execution
-    # Note: If clr_df.columns is large, consider using joblib or multiprocessing here
-    results = [
-        _run_single_stationarity_test(
-            col, 
-            clr_df[col].values, 
-            is_sparse=(col in sparse_cats), 
-            zero_rate=zero_rates.get(col, 0.0), 
-            index=clr_df.index,
-            seasonal_cycle=seasonal_cycle
-        ) 
-        for col in clr_df.columns
-    ]
-    # Convert results to DataFrame for easier manipulation and reporting
-    stat_df = pd.DataFrame(results).set_index('crime')
-
-    # 3. Multiple Testing Correction (BH-FDR)
-    # Only apply correction to 'dense' categories to avoid biasing the FDR
-    dense_mask = ~stat_df['is_sparse']
-    for p_col in ['adf_p', 'za_p']:
-        adj_col = f"{p_col}_adj"
-        stat_df[adj_col] = np.nan  # Initialize with NaN
-        
-        # Pull p-values for dense categories, drop any NaNs from failed tests
-        p_vals = stat_df.loc[dense_mask, p_col].dropna()
-
-        # Only apply correction if there are valid p-values to adjust
-        if not p_vals.empty:
-            _, p_adj, _, _ = multipletests(p_vals, method='fdr_bh')
-            # Map adjusted p-values back to the correct rows
-            stat_df.loc[p_vals.index, adj_col] = p_adj
-
-    # 4. Harmonize Conclusions
-    # axis=1 apply is useful here to synthesize the three-test logic
-    concl_cols = ['adf_kpss', 'za_conclusion', 'agreement']
-    conclusions = stat_df.apply(_evaluate_conclusion, axis=1)
-    stat_df[concl_cols] = pd.DataFrame(conclusions.tolist(), index=stat_df.index)
-
-    # 5. Reporting
-    if verbose:
-        _print_stationarity_report(stat_df, sparse_cats, zero_rates, 
-                                   era_boundaries, seasonal_cycle, sparse_threshold)
-
-    return stat_df 
-
-
 # -----------------------------------------------------------------------------
-# 5. Run Bootstrap Comparison of Eras
+# Helper Function 4-D: Hedges' g effect size calculation with small sample correction
 # -----------------------------------------------------------------------------
 def _calculate_hedges_g(x1, x2):
     """
@@ -708,14 +760,18 @@ def _calculate_hedges_g(x1, x2):
     # Calculate pooled standard deviation
     pooled_sd = np.sqrt(((n1 - 1) * s1**2 + (n2 - 1) * s2**2) / (n1 + n2 - 2))
     
+    # Guard against division by zero if both groups have zero variance
     if pooled_sd == 0:
         return 0
-    
+    # Calculate Hedges' g with small sample correction
     d = (np.mean(x2) - np.mean(x1)) / pooled_sd
     correction = 1 - (3 / (4 * (n1 + n2) - 9))
     return d * correction
 
 
+# -----------------------------------------------------------------------------
+# Helper Function 4-E: Vectorized block bootstrap logic to preserve temporal autocorrelation
+# -----------------------------------------------------------------------------
 def _block_bootstrap_logic(x1, x2, block_size, n_bootstrap, seed):
     """Internal: Vectorized block bootstrap to preserve temporal autocorrelation."""
     rng = np.random.default_rng(seed)
@@ -726,7 +782,7 @@ def _block_bootstrap_logic(x1, x2, block_size, n_bootstrap, seed):
     n_total = len(combined)
     offsets = np.arange(block_size)
     
-    def get_boot_means(n_target, blocks_needed):
+    def _get_boot_means(n_target, blocks_needed):
         # Generate random start indices for all bootstrap iterations at once
         starts = rng.integers(0, n_total - block_size + 1, size=(n_bootstrap, blocks_needed))
         # Efficiently extract blocks using broadcasting: (n_bootstrap, blocks, block_size)
@@ -737,12 +793,15 @@ def _block_bootstrap_logic(x1, x2, block_size, n_bootstrap, seed):
     # Calculate blocks needed for each group
     blocks1, blocks2 = int(np.ceil(n1 / block_size)), int(np.ceil(n2 / block_size))
     
-    boot_diffs = get_boot_means(n2, blocks2) - get_boot_means(n1, blocks1)
+    # Generate bootstrap means for both groups and calculate the difference for each iteration
+    boot_diffs = _get_boot_means(n2, blocks2) - _get_boot_means(n1, blocks1)
     p_val = np.mean(np.abs(boot_diffs) >= np.abs(observed_diff))
     
     return observed_diff, p_val
 
-
+# -----------------------------------------------------------------------------
+# Helper Function 4-F: Standardized console output for block bootstrap results with clear formatting and interpretation notes
+# -----------------------------------------------------------------------------
 def _print_bootstrap_report(df, title, n1_info, n2_info, block_size, n_bootstrap):
     """Internal: Standardized console output formatter."""
     print(f"\n{'='*105}")
@@ -751,27 +810,29 @@ def _print_bootstrap_report(df, title, n1_info, n2_info, block_size, n_bootstrap
     print(f"Samples:  {n1_info[0]} (n={n1_info[1]}) vs {n2_info[0]} (n={n2_info[1]})")
     print(f"{'='*105}")
 
-    # Sign convention note
+    # Interpretation note for sign convention
     print(
         f"Sign note: hedges_g = mean(era2) - mean(era1). "
         f"hedges_g_clr = -hedges_g, matching CLR table convention."
     ) 
     
-    # Split dense vs sparse for display
+    # Separate dense and sparse categories for reporting, with clear section headers and formatting
     dense_df  = df[~df['is_sparse']]
     sparse_df = df[ df['is_sparse']]
-
+    # Columns to display for dense and sparse categories, with clear labels
     cols = ['delta_mean', 'hedges_g', 'hedges_g_clr', 'p_bootstrap', 'p_adj', 'mean_sig'] 
 
     print("\nCONFIRMED CATEGORIES (dense ✅)")
     print(dense_df[cols].round(4).to_string())
 
+    # Interpretation note for sparse categories
     if not sparse_df.empty:
         print("\nFLAGGED CATEGORIES (sparse ⚠️ - excluded from FDR correction)")
         sparse_cols = ['delta_mean', 'hedges_g', 'hedges_g_clr', 'p_bootstrap']  
         print(sparse_df[sparse_cols].round(4).to_string())
 
-    # Summary
+    # Summary of significant shifts among dense categories and count of sparse categories, 
+    # with clear formatting and interpretation notes
     sig_count = dense_df['mean_sig'].sum()
     print(
         f"\nSummary: {sig_count} of {len(dense_df)} confirmed categories "
@@ -779,9 +840,9 @@ def _print_bootstrap_report(df, title, n1_info, n2_info, block_size, n_bootstrap
         f"{len(sparse_df)} sparse categories excluded from inference."
     )
 
-# ============================================================
-# Bootstrap comparison function to run across all categories
-# ========================================== ==================
+# ----------------------------------------------------------------------------
+# 5. Main Function to Run Era Comparison with Block Bootstrap and Multiple Testing Correction
+# ----------------------------------------------------------------------------
 def run_era_comparison(data, era1_df, era2_df, label1="Era 1", label2="Era 2",
                        verbose=False, block_size=12, n_bootstrap=10_000,
                        seed=None, sparse_cats=None):
@@ -803,7 +864,7 @@ def run_era_comparison(data, era1_df, era2_df, label1="Era 1", label2="Era 2",
     # Block size auto-adjustment
     min_T         = min(len(era1_df), len(era2_df))
     original_size = block_size
-
+    # Ensure block size is not larger than the shortest era and provides at least 5 effective blocks
     if min_T / block_size < 5:
         block_size = max(3, min_T // 5)
         warnings.warn(
@@ -819,9 +880,9 @@ def run_era_comparison(data, era1_df, era2_df, label1="Era 1", label2="Era 2",
             stacklevel=2
         )
 
-    # Normalise sparse list
+    # Ensure sparse_cats is a set for faster lookup and handle None case
     sparse_cats = set(sparse_cats) if sparse_cats else set()
-
+    # Run bootstrap for each category and collect results in a list of dicts for DataFrame construction
     results = []
     for col in data.columns:
         x1, x2 = era1_df[col].values, era2_df[col].values
@@ -838,6 +899,7 @@ def run_era_comparison(data, era1_df, era2_df, label1="Era 1", label2="Era 2",
             'is_sparse'   : col in sparse_cats
         })
 
+    # Convert results to DataFrame and set index for easier manipulation
     res_df     = pd.DataFrame(results).set_index('crime')
     dense_mask = ~res_df['is_sparse']
 
@@ -845,13 +907,15 @@ def run_era_comparison(data, era1_df, era2_df, label1="Era 1", label2="Era 2",
     res_df['p_adj']    = np.nan
     res_df['mean_sig'] = False
 
+    # Only apply correction if there are valid p-values to adjust
     _, res_df.loc[dense_mask, 'p_adj'], _, _ = multipletests(
         res_df.loc[dense_mask, 'p_bootstrap'], method='fdr_bh'
     )
+    # Mark significant mean shifts among dense categories based on adjusted p-values
     res_df.loc[dense_mask, 'mean_sig'] = ( 
         res_df.loc[dense_mask, 'p_adj'] < 0.05
     )
-
+    # Sort results by absolute magnitude of Hedges' g for better interpretability, with clear formatting and interpretation notes
     res_df = res_df.sort_values(by='hedges_g', key=abs, ascending=False)
 
     if verbose:
@@ -865,10 +929,10 @@ def run_era_comparison(data, era1_df, era2_df, label1="Era 1", label2="Era 2",
 
     return res_df
 
-
-# ============================================================
-# LAYER 1 - DATA PREPARATION
-# ============================================================
+# -------------------------------------------------------------
+# Helper Function 5-A: Data preparation for time series plotting 
+# with vectorized operations and summary stats
+# -------------------------------------------------------------
 def _prepare_break_data(
     clr_df: pd.DataFrame,
     category: str,
@@ -882,19 +946,23 @@ def _prepare_break_data(
     idx = pd.to_datetime(clr_df.index)
     if category not in clr_df.columns:
         raise KeyError(f"Category '{category}' not found in clr_df columns.")
-
+    
+    # Create series with proper index and name for easier handling
     series = pd.Series(clr_df[category].values, index=idx, name=category)
     break_dt = pd.Timestamp(break_date)
 
+    # Create boolean masks for pre- and post-break periods
     pre_mask = series.index < break_dt
     post_mask = ~pre_mask
 
+    # Extract pre- and post-break values using masks
     pre_vals = series.loc[pre_mask]
     post_vals = series.loc[post_mask]
 
     # Rolling mean with min_periods to avoid NaNs at edges
     rolling = series.rolling(window=window, center=True, min_periods=1).mean()
 
+    # Compute summary statistics with checks for empty segments to avoid NaNs
     stats = {
         'pre_mean': pre_vals.mean() if len(pre_vals) > 0 else np.nan,
         'post_mean': post_vals.mean() if len(post_vals) > 0 else np.nan,
@@ -909,9 +977,10 @@ def _prepare_break_data(
     return series, break_dt, pre_vals, post_vals, stats
 
 
-# ============================================================
-# LAYER 2 - PLOTTING FUNCTIONS
-# ============================================================
+# --------------------------------------------------------------
+# Helper Function 5-B: Plotting function for CLR time series and 
+# distributions with enhanced aesthetics and annotations
+# ---------------------------------------------------------------
 def _plot_time_series(
     ax: plt.Axes,
     series: pd.Series,
@@ -976,7 +1045,9 @@ def _plot_time_series(
     ax.legend(by_label.values(), by_label.keys(), loc=legend_loc, ncol=2, frameon=True)
     ax.grid(True, which='both', linestyle=':', alpha=0.5)
 
-
+# ---------------------------------------------------------------
+# Helper Function 5-C: Plotting function for CLR distributions with enhanced aesthetics, KDE, and mean markers
+# ---------------------------------------------------------------
 def _plot_distribution(
     ax: plt.Axes,
     pre_vals: pd.Series,
@@ -1014,8 +1085,9 @@ def _plot_distribution(
     ax.grid(True, which='both', linestyle=':', alpha=0.5)
 
 
-# -----------------------------------------------------------
-# 7. Structural Break - Distribution Plotting Function
+# ---------------------------------------------------------------
+# Helper Function 5-D to run structural break analysis and 
+# generate plots with nhanced aesthetics and annotations
 # -----------------------------------------------------------
 def _plot_distribution(ax, pre_vals, post_vals,
                        stats, break_date, legend_loc='lower left'):
@@ -1043,12 +1115,13 @@ def _plot_distribution(ax, pre_vals, post_vals,
         ls='--', lw=2.0,
         label=f'Pre mean:  {stats["pre_mean"]:.3f}'
     )
+    # Post mean marker only if defined (avoid NaN issues)
     ax.axvline(
         stats['post_mean'], color='#d62728',
         ls='--', lw=2.0,
         label=f'Post mean: {stats["post_mean"]:.3f}'
     )
-
+    # Title and labels
     ax.set_title(
         f'CLR Density - Before vs After Break '
         f'({pd.Timestamp(break_date).strftime("%Y-%m")})',
@@ -1060,9 +1133,10 @@ def _plot_distribution(ax, pre_vals, post_vals,
     ax.grid(True, which='both', linestyle=':', alpha=0.5)
 
 
-# ============================================================
-# LAYER 3 - VERBOSE OUTPUT
-# ============================================================
+# -------------------------------------------------------------------
+# Helper Function 5-E: Console summary of structural break analysis with 
+# clear formatting and interpretation notes
+# --------------------------------------------------------------------
 def _print_break_summary(
     category: str,
     break_date: str,
@@ -1076,6 +1150,7 @@ def _print_break_summary(
     """
     Print a concise summary table and interpretation.
     """
+    # Create a summary DataFrame for pre- and post-break segments
     summary = pd.DataFrame({'Pre-Break': pre_vals.describe(), 'Post-Break': post_vals.describe()})
     if za_p_adj is None or pd.isna(za_p_adj):
         p_display = "nan  (sparse - excluded from FDR) ⚠️"
@@ -1087,13 +1162,15 @@ def _print_break_summary(
         p_display = f"{za_p_adj:.6f} (❌ Non-significant)"
         conclusion = "Fail to Reject Unit Root: No Significant Break"
 
-    print("=" * 65)
+    # Print the summary with clear formatting and interpretation notes
+    width = 65
+    print("=" * width)
     print(f"STRUCTURAL BREAK ANALYSIS - {category}")
     print(f"Break point : {pd.Timestamp(break_date).strftime('%Y-%m')}")
     print(f"ZA statistic: {za_stat if za_stat is not None else 'NaN'}")
     print(f"za_p_adj    : {p_display}")
     print(f"Conclusion  : {conclusion}")
-    print("=" * 65)
+    print("=" * width)
 
     print("\nSEGMENT STATISTICS:")
     print(summary.T[['count', 'mean', 'std', 'min', 'max']].round(4).to_string())
@@ -1102,21 +1179,22 @@ def _print_break_summary(
     print(f"Pre-break  std      : {stats['pre_std']:.4f}")
     print(f"Post-break std      : {stats['post_std']:.4f}")
 
-    # Optional era composition note (safe checks)
+    # Optional: Check if the break date aligns with known era boundaries and print a note if it does not
     if era_boundaries:
         try:
             break_dt = pd.Timestamp(break_date)
             covid_start = (pd.Timestamp(era_boundaries['Pre-COVID']) + pd.DateOffset(months=1))
             covid_end = pd.Timestamp(era_boundaries['COVID'])
             post_start = pd.Timestamp(era_boundaries['Post-COVID'])
-
+            # Check if the break date falls within the COVID era or if the post-break segment includes multiple eras
             if break_dt < covid_end:
                 pre_covid_in_post = len(post_vals[post_vals.index < covid_start])
                 covid_months = len(post_vals[(post_vals.index >= covid_start) & (post_vals.index <= covid_end)])
                 post_months = len(post_vals[post_vals.index > covid_end])
-
                 era_label = "two" if pre_covid_in_post == 0 else "multiple"
                 print(f"\nNote: Post-break segment (n={len(post_vals)}) spans {era_label} administrative eras:")
+
+                # Print the breakdown of months in each era within the post-break segment, if applicable
                 if pre_covid_in_post > 0:
                     pre_covid_end = covid_start - pd.DateOffset(months=1)
                     print(f"  Pre-COVID era  : {pre_covid_in_post:<4} months ({break_dt.strftime('%Y-%m')} - {pre_covid_end.strftime('%Y-%m')})")
@@ -1126,10 +1204,9 @@ def _print_break_summary(
         except Exception:
             pass
 
-
-# ============================================================
-# LAYER 4 - EXECUTION INTERFACE
-# ============================================================
+# ----------------------------------------------------------------
+# 6. Main Function to Plot Structural Break Diagnostics with Enhanced Aesthetics and Console Summary
+# ----------------------------------------------------------------
 def plot_structural_break(
     clr_df: pd.DataFrame,
     category: str,
@@ -1146,28 +1223,30 @@ def plot_structural_break(
     """
     Plot structural break diagnostics: top time series + bottom density comparison.
     """
+    # Data preparation
     series, break_dt, pre_vals, post_vals, stats = _prepare_break_data(
         clr_df, category, break_date, window
     )
 
-    # Figure config
+    # Set up the figure with specified height ratios for better aesthetics
     g_kw = {'height_ratios': [1.2, 0.8], 'hspace': 0.3}
     fig, (ax_ts, ax_dist) = plt.subplots(2, 1, figsize=(16, 12), gridspec_kw=g_kw)
 
-    # Plot panels
+    # Plotting
     _plot_time_series(
         ax_ts, series, break_dt, stats, era_config or {},
         window, category, za_stat, za_p_adj, legend_loc
     )
     _plot_distribution(ax_dist, pre_vals, post_vals, stats, break_dt, legend_loc)
 
-    # Suptitle
+    # Construct the title with ZA statistic and adjusted p-value, handling NaN cases gracefully
     p_label = (
         f"Adj p-value: {za_p_adj:.4f}"
         if (za_p_adj is not None and not pd.isna(za_p_adj))
         else "Adj p-value: NaN | sparse"
     )
     
+    # Format ZA statistic for display, handling None or NaN cases gracefully
     za_display = f"{za_stat:.3f}" if za_stat is not None else "NaN"
     
     plt.suptitle(
@@ -1178,13 +1257,14 @@ def plot_structural_break(
 
     plt.subplots_adjust(top=0.92)
 
+    # Save the figure if a path is provided, with a descriptive filename based on the category and break date
     if save_path:
-        
         fname = f"{save_path}break_{category.replace(" ", "").replace("/", "")}.png"
         plt.savefig(fname, dpi=300, bbox_inches='tight')
 
     plt.show()
 
+    # Print the console summary if verbose is True
     if verbose:
         _print_break_summary(
             category, break_date, pre_vals, post_vals, stats,
@@ -1192,19 +1272,9 @@ def plot_structural_break(
         )
 
 
-# ============================================================
-# COVARIANCE STRUCTURE ANALYSIS
-# ============================================================
-# Layer 1 - Data Preparation
-# Layer 2 - Box's M + Permutation Test
-# Layer 3 - Correlation Heatmaps (per era + differences)
-# Layer 4 - Log-Determinant Comparison
-# Layer 5 - Orchestrator
-# ============================================================
-
-# ============================================================
-# LAYER 1 - DATA PREPARATION
-# ============================================================
+# -----------------------------------------------------------
+# Helper Function 6-A: Prepare covariance matrices and CLR arrays for Box's M test with validation and reporting
+# -----------------------------------------------------------
 def _prepare_cov_matrices(eras_stat, clr_era):
     """
     Extract and validate all covariance matrices and CLR arrays.
@@ -1261,10 +1331,105 @@ def _prepare_cov_matrices(eras_stat, clr_era):
 
     return matrices
 
+# -----------------------------------------------------------
+# 7. Function: Box's M test for equality of covariance matrices with permutation-based p-value
+# -----------------------------------------------------------
+def run_boxm_test(matrices, n_permutations=10_000,
+                  seed=None, sparse_cats=None):
+    """
+    Box's M test for equality of covariance matrices across eras,
+    with permutation-based p-value for robustness to non-normality.
 
-# ============================================================
-# LAYER 2 - BOX'S M TEST + PERMUTATION
-# ============================================================
+    Parameters
+    ----------
+    matrices       : output of _prepare_cov_matrices
+    n_permutations : permutation iterations
+    seed           : random seed
+    sparse_cats    : list of sparse category names to flag
+
+    Returns
+    -------
+    dict:
+        M_obs   : float   observed M statistic
+        M_perm  : ndarray permutation distribution
+        p_perm  : float   permutation p-value
+        n_perm  : int     number of permutations
+        reject  : bool    True if p_perm < 0.05
+    """
+    # Normalize sparse_cats to a set for efficient lookup and handle None case
+    sparse_cats = set(sparse_cats or [])
+    rng         = np.random.default_rng(seed)
+    era_keys    = list(matrices.keys())
+
+    # Extract CLR arrays for each era into a list of groups for the test
+    groups = [matrices[e]['clr'].values for e in era_keys]
+    ns     = [g.shape[0] for g in groups]
+    K      = groups[0].shape[1]
+    N      = sum(ns)
+
+    # Observed statistic
+    M_obs  = _boxm_statistic(groups)
+
+    # Permutation distribution
+    all_data = np.vstack(groups)
+    M_perm   = np.empty(n_permutations)
+
+    # Permute group labels and compute M statistic for each permutation
+    for i in range(n_permutations):
+        idx      = rng.permutation(N)
+        shuffled = all_data[idx]
+        perm_groups, start = [], 0
+        # Reconstruct groups based on original sample sizes
+        for n in ns:
+            perm_groups.append(shuffled[start:start + n])
+            start += n
+        M_perm[i] = _boxm_statistic(perm_groups)
+    # Calculate p-value as the proportion of permuted statistics that are as 
+    # extreme as or more extreme than the observed statistic
+    p_perm = float(np.mean(M_perm >= M_obs))
+    reject = p_perm < 0.05
+
+    # Formatted console output with clear reporting of test results and interpretation
+    print()
+    print("=" * 65)
+    print("BOX'S M TEST - EQUALITY OF COVARIANCE MATRICES")
+    print("=" * 65)
+    print(f"  Comparison    : {' vs '.join(era_keys)}")
+    print(f"  Groups (k)    : {len(era_keys)}")
+    print(f"  Variables (K) : {K}")
+    print(f"  Sample sizes  : "
+          f"{', '.join(f'{e}=T{n}' for e, n in zip(era_keys, ns))}")
+    print(f"  Permutations  : {n_permutations:,}  seed={seed}")
+    print()
+    print(f"  M statistic   : {M_obs:.4f}")
+    print(f"  p (permuted)  : {p_perm:.4f}  "
+          f"{'✅ reject H₀ - structures differ' if reject else '❌ fail to reject H₀'}")
+    print()
+    
+    # Hypotheses
+    print("  H₀: Σ_pre = Σ_covid = Σ_post")
+    print("  H₁: At least one covariance matrix differs")
+
+    # Interpretation note for sparse categories
+    if sparse_cats:
+        print()
+        print(f"  Note: {len(sparse_cats)} sparse categories "
+              f"included in matrix, flagged ⚠️:")
+        for cat in sorted(sparse_cats):
+            print(f"    {cat}")
+
+    return {
+        'M_obs' : M_obs,
+        'M_perm': M_perm,
+        'p_perm': p_perm,
+        'n_perm': n_permutations,
+        'reject': reject,
+    }
+
+
+# -----------------------------------------------------------
+# Helper Function 7-A: Compute Box's M statistic for k groups of observations
+# -----------------------------------------------------------
 def _boxm_statistic(groups):
     """
     Compute Box's M statistic for k groups of observations.
@@ -1295,102 +1460,17 @@ def _boxm_statistic(groups):
     ld_pool = np.linalg.slogdet(S_pool)[1]
     ld_i    = [np.linalg.slogdet(S)[1] for S in covs]
 
+    # Box's M statistic
     M = (N - k) * ld_pool - sum(
         (n - 1) * ld for n, ld in zip(ns, ld_i)
     )
     return float(M)
 
 
-def run_boxm_test(matrices, n_permutations=10_000,
-                  seed=None, sparse_cats=None):
-    """
-    Box's M test for equality of covariance matrices across eras,
-    with permutation-based p-value for robustness to non-normality.
-
-    Parameters
-    ----------
-    matrices       : output of _prepare_cov_matrices
-    n_permutations : permutation iterations
-    seed           : random seed
-    sparse_cats    : list of sparse category names to flag
-
-    Returns
-    -------
-    dict:
-        M_obs   : float   observed M statistic
-        M_perm  : ndarray permutation distribution
-        p_perm  : float   permutation p-value
-        n_perm  : int     number of permutations
-        reject  : bool    True if p_perm < 0.05
-    """
-
-    sparse_cats = set(sparse_cats or [])
-    rng         = np.random.default_rng(seed)
-    era_keys    = list(matrices.keys())
-
-    groups = [matrices[e]['clr'].values for e in era_keys]
-    ns     = [g.shape[0] for g in groups]
-    K      = groups[0].shape[1]
-    N      = sum(ns)
-
-    # Observed statistic
-    M_obs  = _boxm_statistic(groups)
-
-    # Permutation distribution
-    all_data = np.vstack(groups)
-    M_perm   = np.empty(n_permutations)
-
-    for i in range(n_permutations):
-        idx      = rng.permutation(N)
-        shuffled = all_data[idx]
-        perm_groups, start = [], 0
-        for n in ns:
-            perm_groups.append(shuffled[start:start + n])
-            start += n
-        M_perm[i] = _boxm_statistic(perm_groups)
-
-    p_perm = float(np.mean(M_perm >= M_obs))
-    reject = p_perm < 0.05
-
-    # Print report
-    print()
-    print("=" * 65)
-    print("BOX'S M TEST - EQUALITY OF COVARIANCE MATRICES")
-    print("=" * 65)
-    print(f"  Comparison    : {' vs '.join(era_keys)}")
-    print(f"  Groups (k)    : {len(era_keys)}")
-    print(f"  Variables (K) : {K}")
-    print(f"  Sample sizes  : "
-          f"{', '.join(f'{e}=T{n}' for e, n in zip(era_keys, ns))}")
-    print(f"  Permutations  : {n_permutations:,}  seed={seed}")
-    print()
-    print(f"  M statistic   : {M_obs:.4f}")
-    print(f"  p (permuted)  : {p_perm:.4f}  "
-          f"{'✅ reject H₀ - structures differ' if reject else '❌ fail to reject H₀'}")
-    print()
-    
-    print("  H₀: Σ_pre = Σ_covid = Σ_post")
-    print("  H₁: At least one covariance matrix differs")
-
-    if sparse_cats:
-        print()
-        print(f"  Note: {len(sparse_cats)} sparse categories "
-              f"included in matrix, flagged ⚠️:")
-        for cat in sorted(sparse_cats):
-            print(f"    {cat}")
-
-    return {
-        'M_obs' : M_obs,
-        'M_perm': M_perm,
-        'p_perm': p_perm,
-        'n_perm': n_permutations,
-        'reject': reject,
-    }
-
-
-# ============================================================
-# LAYER 3 - CORRELATION HEATMAPS
-# ============================================================
+# ------------------------------------------------------------
+# Helper Function 7-B: Plot correlation heatmaps for each era with clear 
+# labeling of sparse categories and enhanced aesthetics
+# -------------------------------------------------------------
 def _corr_from_lw(cov_lw, cols):
     """
     Convert LW covariance matrix to correlation matrix.
@@ -1409,12 +1489,17 @@ def _corr_from_lw(cov_lw, cols):
     np.fill_diagonal(corr, 1.0)
     return pd.DataFrame(corr, index=cols, columns=cols)
 
-
+# -------------------------------------------------------------
+# Helper Function 7-C: Append warning emoji to sparse category names for plot labels
+# -------------------------------------------------------------
 def _label_cols(cols, sparse_cats):
     """Append ⚠️ to sparse category names for plot labels."""
     return [f"{c} ⚠️" if c in sparse_cats else c for c in cols]
 
-
+# -------------------------------------------------------------
+# 8. Function: Plot correlation heatmaps for each era with 
+# clear labeling of sparse categories and enhanced aesthetics
+# -------------------------------------------------------------
 def plot_correlation_heatmaps(matrices, sparse_cats=None,
                                save_path=None):
     """
@@ -1474,7 +1559,10 @@ def plot_correlation_heatmaps(matrices, sparse_cats=None,
 
     return {'corrs': corrs}
 
-
+# -------------------------------------------------------------
+# 9. Function: Plot difference correlation heatmaps between eras with 
+# clear labeling of sparse categories and enhanced aesthetics
+# -------------------------------------------------------------
 def plot_correlation_diff_heatmaps(matrices, sparse_cats=None,
                                     save_path=None):
     """
@@ -1516,7 +1604,7 @@ def plot_correlation_diff_heatmaps(matrices, sparse_cats=None,
     diff_pc = corrs['COVID']      - corrs['Pre-COVID']
     diff_cp = corrs['Post-COVID'] - corrs['COVID']
     diff_pp = corrs['Post-COVID'] - corrs['Pre-COVID']
-
+    # Validate that differences are symmetric and have zeros on the diagonal
     diffs = [diff_pc, diff_cp, diff_pp]
 
     # Titles with α values from each era
@@ -1566,9 +1654,9 @@ def plot_correlation_diff_heatmaps(matrices, sparse_cats=None,
     }
 
 
-# ============================================================
-# LAYER 4 - LOG-DETERMINANT COMPARISON
-# ============================================================
+# -------------------------------------------------------------
+# 10. Function: Compute log-determinants of covariance matrices per era and compare differences
+# -------------------------------------------------------------
 def compute_log_determinants(matrices):
     """
     Compute log-determinant of raw and LW covariance matrices per era.
@@ -1644,9 +1732,9 @@ def compute_log_determinants(matrices):
     }
 
 
-# ============================================================
-# LAYER 5 - ORCHESTRATOR
-# ============================================================
+# -------------------------------------------------------------
+# 11. Function: Run full covariance structure analysis pipeline with clear reporting and interpretation
+# -------------------------------------------------------------
 def run_covariance_structure_analysis(eras_stat, clr_era,
                                        sparse_cats=None,
                                        n_permutations=10_000,
@@ -1685,7 +1773,9 @@ def run_covariance_structure_analysis(eras_stat, clr_era,
     print("COVARIANCE STRUCTURE ANALYSIS")
     print("=" * 65)
 
-    # Step 1 - Prepare and validate
+    # ---------------------------------------------
+    # Step 11-A: Prepare covariance matrices and CLR arrays with validation report
+    # ---------------------------------------------
     matrices = _prepare_cov_matrices(eras_stat, clr_era)
 
     # Step 2 - Box's M + permutation
@@ -1696,7 +1786,10 @@ def run_covariance_structure_analysis(eras_stat, clr_era,
         sparse_cats    = sparse_cats,
     )
 
-    # Step 3 - Per-era correlation heatmaps
+    # ---------------------------------------------
+    # Step 11-B: Plot correlation heatmaps for each era with clear 
+    # labeling of sparse categories and enhanced aesthetics
+    # ---------------------------------------------
     print()
     corr_heatmaps = plot_correlation_heatmaps(
         matrices,
@@ -1704,7 +1797,9 @@ def run_covariance_structure_analysis(eras_stat, clr_era,
         save_path   = save_path,
     )
 
-    # Step 4 - Difference heatmaps (3 comparisons)
+    # ---------------------------------------------
+    # Step 11-C: Plot difference correlation heatmaps between eras with clear
+    # ---------------------------------------------
     print()
     corr_diffs = plot_correlation_diff_heatmaps(
         matrices,
@@ -1712,7 +1807,9 @@ def run_covariance_structure_analysis(eras_stat, clr_era,
         save_path   = save_path,
     )
 
-    # Step 5 - Log-determinants
+    # ---------------------------------------------
+    # Step 11-D: Compute log-determinants of covariance matrices per era and compare differences
+    # ---------------------------------------------
     log_dets = compute_log_determinants(matrices)
 
     print("\n" + "=" * 65)
@@ -1728,19 +1825,20 @@ def run_covariance_structure_analysis(eras_stat, clr_era,
     }
 
 
-
-
-# ============================================================
-# PCA ANALYSIS
-# ============================================================
+# -------------------------------------------------------------
 # Layer 1 - Core Engine: Precedence Logic
 # Layer 2 - Joint PCA Analysis and Structured Reporting
 # Layer 3 - Visualization (With Dynamic Threshold Handling)
 # Layer 4 - Orchestrator
-# ============================================================
-# ============================================================
+# -------------------------------------------------------------
+# 12. PCA ANALYSIS
+# Note: PCA component selection follows strict precedence:
+#       1. If `n_components` is provided, use it directly.
+#       2. Otherwise, if `threshold` is provided, retain the smallest number
+#          of components whose cumulative explained variance meets it.
+#       3. Otherwise, default to 2 components.
 # Layer 1. CORE ENGINE: PRECEDENCE LOGIC
-# ============================================================
+# -------------------------------------------------------------
 def _fit_and_slice_pca(X, n_components, threshold, seed, index, columns):
     """
     Fit PCA and return both sliced (retained) and full component results.
@@ -1790,17 +1888,18 @@ def _fit_and_slice_pca(X, n_components, threshold, seed, index, columns):
         }
     """
     # ------------------------------------------------------------
-    # A. Fit full PCA model
+    # 12-A. Fit full PCA model
     # ------------------------------------------------------------
     pca = PCA(random_state=seed)
     full_scores_raw = pca.fit_transform(X)
     cum_var_all = np.cumsum(pca.explained_variance_ratio_)
 
-    total_pcs = full_scores_raw.shape[1]
+    # Sign normalization: ensure the largest absolute loading per component is positive
+    total_pcs    = full_scores_raw.shape[1]
     all_pc_names = [f"PC{i+1}" for i in range(total_pcs)]
 
     # ------------------------------------------------------------
-    # B. Determine the number of retained components (strict precedence)
+    # 12-B. Determine the number of retained components (strict precedence)
     # ------------------------------------------------------------
     if n_components is not None:
         n_comp = n_components
@@ -1816,13 +1915,13 @@ def _fit_and_slice_pca(X, n_components, threshold, seed, index, columns):
         n_comp = 2
 
     # ------------------------------------------------------------
-    # C. Enforce PCA rank limits
+    # 12-C. Enforce PCA rank limits
     # ------------------------------------------------------------
     n_comp = max(1, min(n_comp, total_pcs))
     retained_names = all_pc_names[:n_comp]
 
     # ------------------------------------------------------------
-    # D. Build return dictionary (sliced + full)
+    # 12-D. Build return dictionary (sliced + full)
     # ------------------------------------------------------------
     return {
         'pca': pca,
@@ -1854,7 +1953,7 @@ def _fit_and_slice_pca(X, n_components, threshold, seed, index, columns):
 
 
 # ============================================================
-# Layer 2. JOINT ANALYSIS AND STRUCTURED REPORTING
+# Layer 12-2. JOINT ANALYSIS AND STRUCTURED REPORTING
 # ============================================================
 def _run_joint_pca(pca_data, per_era_res, seed, sparse_cats, 
                    n_components, variance_threshold):
@@ -1898,7 +1997,7 @@ def _run_joint_pca(pca_data, per_era_res, seed, sparse_cats,
             'centroids' : DataFrame of era-level PCA centroids
     """
     # ------------------------------------------------------------
-    # A. Fit joint PCA using strict precedence rules
+    # 12-2-A. Fit joint PCA using strict precedence rules
     # ------------------------------------------------------------
     joint = pca_data['joint_matrix']
     res = _fit_and_slice_pca(
@@ -1911,19 +2010,19 @@ def _run_joint_pca(pca_data, per_era_res, seed, sparse_cats,
     )
     
     # -------------------------------------------------------------
-    # B. Attach era labels to PCA scores for centroid computation
+    # 12-2-B. Attach era labels to PCA scores for centroid computation
     # -------------------------------------------------------------
     # assign returns a new DataFrame
     res['scores'] = res['scores'].assign(era=pca_data['era_labels'])
     
     # -------------------------------------------------------------
-    # C. Compute era-level centroids in PCA space (average scores per era)
+    # 12-2-C. Compute era-level centroids in PCA space (average scores per era)
     # -------------------------------------------------------------
     pcs = [f"PC{i+1}" for i in range(res['n_comp'])]
     res['centroids'] = res['scores'].groupby('era')[pcs].mean()
 
     # -------------------------------------------------------------
-    # D. Reorder centroids for consistent reporting 
+    # 12-2-D. Reorder centroids for consistent reporting 
     # -------------------------------------------------------------
     order = ['Pre-COVID', 'COVID', 'Post-COVID']
     res['centroids'] = res['centroids'].reindex(
@@ -1931,13 +2030,13 @@ def _run_joint_pca(pca_data, per_era_res, seed, sparse_cats,
     )
 
     # -------------------------------------------------------------
-    # E. Begin formatted output assembly
+    # 12-2-E. Begin formatted output assembly
     # -------------------------------------------------------------
     output = []
     line = "=" * 65
 
     # -------------------------------------------------------------
-    # SECTION A: CORE ENGINE
+    # SECTION 12-2-A: CORE ENGINE
     # -------------------------------------------------------------
     output.append(f"\n{line}\n{'PCA ANALYSIS':^65}\n{line}")
     output.append(f"  Random State                                 : {seed}")
@@ -1945,7 +2044,7 @@ def _run_joint_pca(pca_data, per_era_res, seed, sparse_cats,
     output.append(f"  Variance threshold for component selection   : {variance_threshold*100:.0f}%")
 
     # -------------------------------------------------------------
-    # SECTION B: DATA PREP
+    # SECTION 12-2-B: DATA PREP
     # -------------------------------------------------------------
     output.append(f"\n{line}\n{'PCA DATA PREPARATION':^65}\n{line}")
     output.append(f"  Sparse categories dropped : {len(sparse_cats)}")
@@ -1962,7 +2061,7 @@ def _run_joint_pca(pca_data, per_era_res, seed, sparse_cats,
             output.append(f"  {era:<26} : {shape}")
 
     # -------------------------------------------------------------
-    # SECTION C: PER-ERA PCA BREAKDOWN
+    # SECTION 12-2-C: PER-ERA PCA BREAKDOWN
     # -------------------------------------------------------------
     output.append(f"\n{line}\n{'PER-ERA PCA':^65}\n{line}")
     output.append(f"  Variance threshold : {variance_threshold*100:.0f}%")
@@ -1984,7 +2083,7 @@ def _run_joint_pca(pca_data, per_era_res, seed, sparse_cats,
             )
 
     # -------------------------------------------------------------
-    # SECTION D: JOINT PCA RESULTS
+    # SECTION 12-2-D: JOINT PCA RESULTS
     # -------------------------------------------------------------
     output.append(f"\n{line}\n{'JOINT PCA ANALYSIS':^65}\n{line}")
     output.append(f"  Retained   : {res['n_comp']} PCs ({res['cum_var'][-1]:.1%} Var)")
@@ -2003,7 +2102,7 @@ def _run_joint_pca(pca_data, per_era_res, seed, sparse_cats,
         output.append(f"  {era:<12} {vals}")
 
     # -------------------------------------------------------------
-    # SECTION E: STRUCTURAL SHIFT ANALYSIS (PC1)
+    # SECTION 12-2-E: STRUCTURAL SHIFT ANALYSIS (PC1)
     # -------------------------------------------------------------
     if all(e in res['centroids'].index for e in order) and 'PC1' in res['centroids'].columns:
         c = res['centroids'].loc[order, 'PC1']
@@ -2032,7 +2131,7 @@ def _run_joint_pca(pca_data, per_era_res, seed, sparse_cats,
             output.append(f"  >> % PERMANENT  (N/S)  : N/A (near-zero shock)")
 
     # -------------------------------------------------------------
-    # F. Finalize and print report
+    # 12-2-F. Finalize and print report
     # -------------------------------------------------------------
     output.append(line)
     report = "\n".join(output)
@@ -2042,9 +2141,9 @@ def _run_joint_pca(pca_data, per_era_res, seed, sparse_cats,
     return res
 
 
-# ============================================================
-# 3. VISUALIZATION (With Dynamic Threshold Handling)
-# ============================================================
+# ---------------------------------------------
+# Layer 12-3: Visualization (With Dynamic Threshold Handling)
+# ----------------------------------------------
 def _plot_all_visuals(per_era_res, joint_res, era_config, 
                       v_thresh, save_image, feature_label='features'):
 
@@ -2090,7 +2189,7 @@ def _plot_all_visuals(per_era_res, joint_res, era_config,
         Default 'features'. Pass 'crime types' for crime data.
     """
     # ------------------------------------------------------------
-    # 1. CONFIGURATION
+    # 12-3-1: Determine which PCs to plot based on availability in joint PCA results
     # ------------------------------------------------------------
     available_pcs = [pc for pc in ['PC1', 'PC2'] if pc in joint_res['loadings'].columns]
     n_rows = len(available_pcs)
@@ -2112,7 +2211,7 @@ def _plot_all_visuals(per_era_res, joint_res, era_config,
             color_map[era] = cfg[2]
 
     # ============================================================
-    # FIGURE 1 — LOADING GRID (Wide, Long, Bold)
+    # FIGURE 12-3-1: LOADING GRID (PC1 & PC2)
     # ============================================================
     fig1, axes1 = plt.subplots(n_rows, 4, figsize=(36, 10 * n_rows), squeeze=False)
     fig1.suptitle(
@@ -2183,12 +2282,12 @@ def _plot_all_visuals(per_era_res, joint_res, era_config,
         fig1.savefig(f"{save_image}PCA_loadings.png", dpi=300)
 
     # ============================================================
-    # FIGURE 2 — DIAGNOSTICS PANEL
+    # FIGURE 12-3-2: DIAGNOSTICS PANEL (Scree Plots + Migration Map)
     # ============================================================
     fig2, axes2 = plt.subplots(1, 3, figsize=(32, 11))
 
     # ------------------------------------------------------------
-    # A. Per-Era Scree
+    # 12-3-A: Per-Era Scree Plots with Dynamic Retained Component Markers
     # ------------------------------------------------------------
     for era in eras:
         if era in per_era_res:
@@ -2209,7 +2308,7 @@ def _plot_all_visuals(per_era_res, joint_res, era_config,
     _format_diag(axes2[0], "Per-Era Scree Plot")
 
     # ------------------------------------------------------------
-    # B. Joint Scree
+    # 12-3-B: Joint Scree Plot with Cumulative Curve and Dynamic Threshold Line
     # ------------------------------------------------------------
     # Dynamic version
     j_limit = max(10, joint_res['n_comp'] + 2)
@@ -2238,7 +2337,7 @@ def _plot_all_visuals(per_era_res, joint_res, era_config,
     _format_diag(axes2[1], f"Joint Scree (K={joint_res['n_comp']})")
 
     # ------------------------------------------------------------
-    # C. Migration Map
+    # 12-3-C: Era Migration Map (PC1 vs PC2) with Dynamic Coloring and Centroid Stars
     # ------------------------------------------------------------
     ax_mig = axes2[2]
     # Dynamic scatterplot of PCA scores colored by era, with large centroid stars    
@@ -2277,9 +2376,9 @@ def _plot_all_visuals(per_era_res, joint_res, era_config,
 
     plt.show()
 
-# ============================================================
-# HELPER FUNCTION: CONSISTENT STYLING FOR DIAGNOSTIC PLOTS
-# ============================================================
+# -------------------------------------------------------------
+# Helper Function 12-3-1: Consistent styling for PCA diagnostic plots (scree plots)
+# --------------------------------------------------------------
 def _format_diag(ax, title):
     """
     Apply consistent styling to PCA diagnostic subplots.
@@ -2303,7 +2402,6 @@ def _format_diag(ax, title):
     title : str
         Title to apply to the subplot.
     """
-
     # Title styling
     ax.set_title(title, fontsize=26, fontweight='bold', pad=25)
 
@@ -2328,9 +2426,10 @@ def _format_diag(ax, title):
         ax.legend(fontsize=16, frameon=True)
 
 
-# ============================================================
-# 4. ORCHESTRATOR
-# ============================================================
+# -------------------------------------------------
+# 13-4: ORCHESTRATOR: 
+# FULL PCA ANALYSIS PIPELINE WITH STRUCTURED REPORTING AND OPTIONAL VISUALIZATION
+# -------------------------------------------------
 def run_pca_analysis(clr_era, chosen_clr, sparse_cats,
                      seed,
                      era_config         = None,
@@ -2410,7 +2509,7 @@ def run_pca_analysis(clr_era, chosen_clr, sparse_cats,
     of show_plots. Set show_plots=False to suppress figures only.
     """
     # ------------------------------------------------------------
-    # 1. PREPARE DATA MATRICES
+    # 13-4-1: DATA PREPARATION
     # ------------------------------------------------------------
     # Remove sparse categories - keep only dense columns
     sparse_cats = list(set(sparse_cats))
@@ -2446,14 +2545,14 @@ def run_pca_analysis(clr_era, chosen_clr, sparse_cats,
     }
 
     # ------------------------------------------------------------
-    # 2. PARAMETER NORMALIZATION
+    # 13-4-2: ERA CONFIGURATION AND COLOR MAPPING
     # ------------------------------------------------------------
     # era_config defaults to empty dict if not provided
     # downstream color_map derivation handles the empty case gracefully
     resolved_era_config = era_config or {}
 
     # ------------------------------------------------------------
-    # 3. FIT PER-ERA PCA
+    # 13-4-3: PER-ERA PCA FITTING WITH STRICT COMPONENT SELECTION PRECEDENCE
     # ------------------------------------------------------------
     # Independent PCA per era — same retention logic applied to each
     per_era_res = {
@@ -2469,7 +2568,7 @@ def run_pca_analysis(clr_era, chosen_clr, sparse_cats,
     }
 
     # ------------------------------------------------------------
-    # 4. RUN JOINT PCA
+    # 13-4-4: JOINT PCA AND STRUCTURAL SHIFT ANALYSIS
     # ------------------------------------------------------------
     # Combined matrix PCA — centroids and structural shift metrics
     joint_res = _run_joint_pca(
@@ -2482,7 +2581,7 @@ def run_pca_analysis(clr_era, chosen_clr, sparse_cats,
     )
 
     # ------------------------------------------------------------
-    # 5. VISUALIZATION SUITE (CONDITIONAL)
+    # 13-4-5: OPTIONAL VISUALIZATION (WITH DYNAMIC THRESHOLD HANDLING)
     # ------------------------------------------------------------
     if show_plots:
         # Pass image_path only when saving is requested
@@ -2501,7 +2600,7 @@ def run_pca_analysis(clr_era, chosen_clr, sparse_cats,
               "Pass show_plots=True to render plots.")
 
     # ------------------------------------------------------------
-    # 6. FINAL PACKAGING
+    # 13-4-6: STRUCTURED RETURN DICTIONARY WITH PER-ERA AND JOINT RESULTS
     # ------------------------------------------------------------
     # Full scores and loadings accessible via per-era dicts directly
     # e.g. pca_results['Pre-COVID']['scores_full']

@@ -604,17 +604,7 @@ def validate_crime_data(
         print("PASS  Date column is datetime64")
 
     # -------------------------------------------------
-    # Step B — Validate date column monotonicity
-    #    Ensures the datetime column is sorted in non‑decreasing order.
-    #    Required for constructing a coherent monthly panel.
-    # -------------------------------------------------
-    if not data[date_col].is_monotonic_increasing:
-        print("FAIL  Date column is not sorted ascending")
-    else:
-        print("PASS  Date column is sorted ascending")
-
-    # -------------------------------------------------
-    # Step C — Validate global sort order
+    # Step B — Validate global sort order
     #    Confirms the dataset is ordered by (group, date)
     #    exactly as required for panel construction.
     #    Ensures each group’s timeline is contiguous and
@@ -632,7 +622,7 @@ def validate_crime_data(
         print("FAIL  Data is not sorted by group and date")
 
     # -------------------------------------------------
-    # Step D — Validate within‑group date ordering
+    # Step C — Validate within‑group date ordering
     #    Ensures each crime category has dates that increase
     #    monotonically. Detects groups where the timeline is
     #    scrambled, which can break panel continuity checks.
@@ -649,7 +639,7 @@ def validate_crime_data(
             print(f"        {g}")
 
     # -------------------------------------------------
-    # Step E — Validate period count consistency
+    # Step D — Validate period count consistency
     #    Ensures every group spans the same number of
     #    monthly periods. Detects truncated or irregular
     #    timelines that would break panel alignment.
@@ -669,7 +659,7 @@ def validate_crime_data(
         )
 
     # -------------------------------------------------
-    # Step F — Validate non‑negativity of counts
+    # Step E — Validate non‑negativity of counts
     #    Ensures no crime‑count values are negative.
     #    Negative counts indicate data corruption or
     #    preprocessing errors that must be corrected.
@@ -681,7 +671,7 @@ def validate_crime_data(
         print(f"FAIL  {n_neg} negative count(s) detected")
 
     # -------------------------------------------------
-    # Step G — Validate absence of NaNs after filling
+    # Step F — Validate absence of NaNs after filling
     #    Confirms that all missing values were handled
     #    during preprocessing. Any remaining NaNs indicate
     #    upstream data issues requiring correction.
@@ -693,7 +683,7 @@ def validate_crime_data(
         print(f"FAIL  {n_nan} NaN(s) remain after fill")
 
     # -------------------------------------------------
-    # Step H — Validate absence of duplicate (group, date) pairs
+    # Step G — Validate absence of duplicate (group, date) pairs
     #    Ensures each group has exactly one record per period.
     #    Duplicate (group, date) rows indicate aggregation or
     #    ingestion errors that must be resolved before panel use.
@@ -705,7 +695,7 @@ def validate_crime_data(
         print(f"FAIL  {n_dupes} duplicate (group, date) pair(s) found")
 
     # -------------------------------------------------
-    # Step I — Validate full panel size
+    # Step H — Validate full panel size
     #    Confirms the dataset forms a complete panel:
     #    every group must appear in every period exactly once.
     #    Detects missing rows, truncated groups, or overfilled panels.
@@ -724,7 +714,7 @@ def validate_crime_data(
               f"diff={actual - expected:+,}")
 
     # -------------------------------------------------
-    # Step J — Validate presence of audit columns
+    # Step I — Validate presence of audit columns
     #    Confirms that diagnostic columns created during
     #    fill_missing() are present. Their absence suggests
     #    the fill step may not have been executed.
@@ -737,7 +727,7 @@ def validate_crime_data(
                   f"was fill_missing() called before validation?")
 
     # -------------------------------------------------
-    # Step K — Evaluate zero‑value prevalence
+    # Step J — Evaluate zero‑value prevalence
     #    Reports overall sparsity and flags groups whose
     #    zero‑rate exceeds a configured threshold. High
     #    zero‑rates may indicate structural sparsity or
