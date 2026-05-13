@@ -1,22 +1,13 @@
 import pandas as pd
 from typing import Dict
+import clr_config as config
 
 # ---------------------------------------------------------------------------------
 # 0. Global constants for CLR transformation and pseudocount handling
 # ---------------------------------------------------------------------------------
-"""
-_DATE_KEY: The key for the date column in the dataset, used for grouping and analysis.
-_COUNTER_KEY: The key for the count of crimes, used for aggregating crime data.
-_GROUP_KEY: The key for the crime type or category, used for grouping crime data.
-_EPS_GRID: A list of small values representing the Jeffreys prior grid for smoothing in 
-    statistical analysis, which helps to prevent overfitting and provides a more robust 
-    estimation of probabilities in the presence of sparse data.
-"""
-config = {
-    "_DATE_KEY"     : "year_month",
-    "_COUNTER_KEY"  : "crime_count",
-    "_GROUP_KEY"    : "fbi_code_desc",
-}
+_DATE_KEY    = config.config_agg["_DATE_KEY"]
+_COUNTER_KEY = config.config_agg["_COUNTER_KEY"]
+_GROUP_KEY   = config.config_agg["_GROUP_KEY"]
 
 # ---------------------------------------------------------------------------------
 # AGG_DICT_RESULT is a module‑level cache storing the output of _aggregate_counts().
@@ -42,9 +33,9 @@ AGG_DICT_RESULT = None
 # ---------------------------------------------------------------------------------
 def _aggregate_counts(
     data_df: pd.DataFrame,
-    group_col: str = config["_GROUP_KEY"],
-    date_col: str = config["_DATE_KEY"],
-    counter_col: str = config["_COUNTER_KEY"],
+    group_col: str = _GROUP_KEY,
+    date_col: str = _DATE_KEY,
+    counter_col: str = _COUNTER_KEY,
     force_refresh: bool = False
 ) -> Dict:
     """
@@ -145,8 +136,8 @@ def _aggregate_counts(
 def run_integrity_report(
     data_df       : pd.DataFrame,
     force_refresh : bool = False,
-    group_col     : str  = config["_GROUP_KEY"],
-    date_col      : str  = config["_DATE_KEY"],
+    group_col     : str  = _GROUP_KEY,
+    date_col      : str  = _DATE_KEY,
     freq          : str  = "MS"
 ) -> Dict:
     """
@@ -154,13 +145,13 @@ def run_integrity_report(
 
     This function evaluates the completeness and structural soundness of a
     monthly crime‑count panel. It aggregates raw records, constructs the full
-    expected (group × month) grid, identifies true missing panel entries,
+    expected (group X month) grid, identifies true missing panel entries,
     computes per‑group coverage ratios, summarizes completeness statistics,
     and flags groups with incomplete temporal coverage.
 
     The report distinguishes between:
-      • true panel gaps — months where a (group, month) row is entirely absent
-      • structural zeros — months present in the data but with zero incidents
+      • true panel gaps - months where a (group, month) row is entirely absent
+      • structural zeros - months present in the data but with zero incidents
     Only true gaps are treated as missingness relevant for CLR preprocessing.
 
     Parameters
@@ -180,15 +171,15 @@ def run_integrity_report(
     -------
     dict
         A structured dictionary containing:
-          • date_range       : (start, end) bounds of the panel in YYYY‑MM format
-          • missing          : DataFrame of true missing (group, month) rows
-          • missing_by_group : Series of missing‑month counts per group
-          • coverage_ratio   : Series of observed / expected months per group
-          • duplicates       : Number of duplicate (group, month) rows
-          • expected_rows    : Total rows in the complete panel grid
-          • actual_rows      : Total rows present in the aggregated data
-          • missing_rows     : Number of missing panel entries
-          • completeness     : Overall panel completeness ratio in [0, 1]
+          - date_range       : (start, end) bounds of the panel in YYYY‑MM format
+          - missing          : DataFrame of true missing (group, month) rows
+          - missing_by_group : Series of missing‑month counts per group
+          - coverage_ratio   : Series of observed / expected months per group
+          - duplicates       : Number of duplicate (group, month) rows
+          - expected_rows    : Total rows in the complete panel grid
+          - actual_rows      : Total rows present in the aggregated data
+          - missing_rows     : Number of missing panel entries
+          - completeness     : Overall panel completeness ratio in [0, 1]
 
     Notes
     -----
@@ -202,7 +193,7 @@ def run_integrity_report(
     """
 
     # -------------------------------------------------
-    # Step A — Aggregate raw records into monthly counts
+    # Step 1-A: Aggregate raw records into monthly counts
     #    _aggregate_counts returns:
     #       - 'data'       : cleaned + aggregated DataFrame
     #       - 'start_date' : earliest YYYY‑MM in the dataset
@@ -215,10 +206,10 @@ def run_integrity_report(
     end       = data_dict["end_date"]
 
     # -------------------------------------------------
-    # Step B — Construct the complete panel structure.
+    # Step 1-B: Construct the complete panel structure.
     #    full_months: continuous monthly range
     #    groups: all valid group identifiers
-    #    full_index: full grid (group × month) ensuring no missing combinations
+    #    full_index: full grid (group X month) ensuring no missing combinations
     # -------------------------------------------------
     full_months = pd.date_range(start=start, end=end, freq=freq)
     groups      = data[group_col].dropna().unique()
@@ -229,7 +220,7 @@ def run_integrity_report(
     )
 
     # -------------------------------------------------
-    # Step C — Detect gaps in the panel.
+    # Step 1-C: Detect gaps in the panel.
     #    existing_index: observed (group, date) combinations
     #    missing_index: all expected combinations not present in the data
     #    missing_df: tidy DataFrame of missing rows for downstream filling
@@ -239,7 +230,7 @@ def run_integrity_report(
     missing_df     = missing_index.to_frame(index=False)
 
     # -------------------------------------------------
-    # Step D — Summarize missingness by group.
+    # Step 1-D: Summarize missingness by group.
     #    Produces a Series: group → count of missing (group, month) entries.
     #    Sorted so the worst offenders appear first.
     # -------------------------------------------------
@@ -252,7 +243,7 @@ def run_integrity_report(
     missing_by_group = missing_by_group[missing_by_group > 0]
 
     # -------------------------------------------------
-    # Step E — Per‑group coverage ratio
+    # Step 1-E: Per‑group coverage ratio
     #    Fraction of expected months actually observed for each group.
     #    coverage < 1.0 indicates at least one missing month.
     # -------------------------------------------------
@@ -264,8 +255,8 @@ def run_integrity_report(
     ).sort_values()
 
     # -------------------------------------------------
-    # Step F — Summary statistics
-    #    expected     :total (group × month) combinations in the full panel
+    # Step 1-F: Summary statistics
+    #    expected     :total (group X month) combinations in the full panel
     #    actual       : number of observed rows in the dataset
     #    missing      : number of missing (group, month) entries
     #    duplicates   : count of duplicate group–month rows in the observed data
@@ -278,57 +269,55 @@ def run_integrity_report(
     completeness = 1 - (missing / expected)
 
     # -------------------------------------------------
-    # Step G — Print integrity summary
-    #    Provides a human‑readable overview of:
-    #       - date range covered
-    #       - number of groups
-    #       - expected vs. actual rows
-    #       - missing and duplicate entries
-    #       - overall completeness ratio
+    # Step 1-G: Print integrity summary (Modernized)
     # -------------------------------------------------
-    # Layout widths for summary printing
-    #    width  → total line width
-    # -------------------------------------------------
-    width = 66
-    print(f"\n{'='*width}")
-    print(f"{'CRIME DATA INTEGRITY SUMMARY':^{width}}")
-    print(f"{'='*width}")
-    print(f"Date range    : {start} to {end}")
-    print(f"Total groups  : {len(groups):,}")
-    print(f"Expected rows : {expected:,}")
-    print(f"Actual rows   : {actual:,}")
-    print(f"Missing rows  : {missing:,}")
-    print(f"Duplicates    : {duplicates:,}")
-    print(f"Completeness  : {completeness:.2%}")
+    header_w = 50
+    border = "-" * header_w
+    sub_border = "-" * header_w
+
+    print(f"\n{border}")
+    print(f" 📑  PANEL INTEGRITY & SPARSITY DIAGNOSTIC")
+    print(f"{border}")
+    
+    # Core KPIs
+    print(f"  • Date Horizon   : {start} to {end}")
+    print(f"  • Feature Space  : {len(groups):,} crime categories")
+    print(f"  • Total Panel    : {expected:,} (expected combinations)")
+    print(f"  • Actual Density : {actual:,} (observed rows)")
+    
+    # Performance/Health Score
+    health_color = "✅" if completeness > 0.99 else "⚠️" if completeness > 0.90 else "🚨"
+    print(f"{sub_border}")
+    print(f"  {health_color} Completeness  : {completeness:.2%}")
+    print(f"  🔍 Missing Gaps  : {missing:,} rows")
+    print(f"  👯 Duplicates    : {duplicates:,} rows")
+    print(f"{sub_border}")
 
     # -------------------------------------------------
-    # Step H — Report true panel gaps
-    #    Structural zeros (count = 0) are NOT flagged here.
-    #    Only months where the (group, month) row is entirely missing
-    #    are reported as true gaps in the panel.
+    # Step 1-H: True Panel Gaps (Lined Up)
     # -------------------------------------------------
     if missing > 0:
-        print(f"{'-'*width}")
-        print("TRUE MISSING CRIME GAPS:")
-        table = f"{(missing_by_group.to_string()):^{width}}"
-        print("\n".join("    " + line for line in table.splitlines()))
+        print(f"\n 🔥  CRITICAL: TRUE MISSING GAPS")
+        print("    (These months are entirely absent from the raw data)")
+        for group, count in missing_by_group.items():
+            # <46: Left-align text in a 46-character block
+            # >4:  Right-align numbers in a 4-character block
+            print(f"    ↳ {group:<46} | {count:>4} months missing")
 
     # -------------------------------------------------
-    # Step I — Flag sparse and risky groups
-    #    Groups with coverage < 1.0 are missing at least one month.
-    #    These groups may be sensitive to pseudocount choices in CLR transforms.
+    # Step 1-I: Sparse / Risky Groups (Lined Up)
     # -------------------------------------------------
-    print(f"{'-'*width}")
-    print("SPARSE / RISKY CRIME GROUPS:")
+    print(f"\n 🧪  METHODOLOGICAL RISK: SPARSE GROUPS")
+    print("    (Coverage < 100% | High sensitivity to pseudocounts)")
 
-    sparse = coverage_ratio[coverage_ratio < 1.0]   # groups with incomplete coverage
+    sparse = coverage_ratio[coverage_ratio < 1.0]
 
     if not sparse.empty:
-        table = f"{(sparse.to_string()):^{width}}"  # center‑aligned table for display
-        print("\n".join("    " + line for line in table.splitlines()))
+        for group, ratio in sparse.items():
+            # >7.1%: Right-align percentage to keep decimals aligned
+            print(f"    ↳ {group:<46} | {ratio:>7.1%} coverage")
     else:
-        print("  None - all groups fully covered across all months")
-
+        print("    ✨ None - Feature set is temporally dense")
     return {
         "date_range"      : (start, end),
         "missing"         : missing_df,
@@ -341,72 +330,72 @@ def run_integrity_report(
         "completeness"    : completeness,
     }
 
-
 # -------------------------------------------------------------------
 # 2. Main function to fill missing (group, month) entries in the panel
 # -------------------------------------------------------------------
 def fill_missing(
-    data_df   : pd.DataFrame,
-    group_col : str   = config["_GROUP_KEY"],
-    date_col  : str   = config["_DATE_KEY"],
-    value_col : str   = config["_COUNTER_KEY"],
-    freq      : str   = "MS",
+    data_df: pd.DataFrame,
+    group_col: str = _GROUP_KEY,
+    date_col: str = _DATE_KEY,
+    value_col: str = _COUNTER_KEY,
+    freq: str = "MS",
     fill_value: float = 0,
-    verbose   : bool  = True
-) -> Dict:
+    verbose: bool = True
+) -> dict:
     """
-    Construct a complete crime panel and fill missing group–month entries.
+    Construct a complete group–date panel and fill missing observations.
 
-    This function rebuilds the full expected (group × month) panel from the
-    observed crime categories and date range, aligns the aggregated data to
-    that structure, and fills missing observations with a specified value.
-    It preserves audit flags indicating which entries were originally absent
-    and which values are zero after filling, enabling downstream analyses to
-    distinguish structural zeros from true gaps.
+    This function ensures that every group has an entry for every period
+    between the observed start and end dates. Missing (group, date) pairs
+    are introduced via reindexing and filled with `fill_value`. Two audit
+    flags are added:
+
+        - was_missing        — True if the (group, date) pair did not exist
+        - is_zero_after_fill — True if the filled value equals zero
+
+    These flags allow downstream models to distinguish structural zeros
+    from imputed gaps.
 
     Parameters
     ----------
     data_df : pd.DataFrame
-        Raw crime incident records containing at least group_col and date_col.
+        Input dataset containing group, date, and count columns.
+
     group_col : str
-        Column identifying the crime category.
+        Column identifying groups (e.g., precinct, district).
+
     date_col : str
-        Column identifying the observation month (YYYYMM or datetime-like).
+        Column containing datetime-like values.
+
     value_col : str
-        Column containing the crime count to be filled.
+        Column containing the numeric count to be filled.
+
     freq : str, default "MS"
-        Pandas frequency string defining the monthly grid.
+        Frequency for constructing the complete date range.
+
     fill_value : float, default 0
-        Value used to fill missing (group, month) entries.
+        Value used to fill missing (group, date) entries.
+
     verbose : bool, default True
-        If True, prints a summary of the fill operation.
+        If True, prints a diagnostic summary.
 
     Returns
     -------
     dict
-        A dictionary containing:
-          • date_range : (start, end) bounds of the panel in YYYY‑MM format
-          • filled_df  : DataFrame with the complete panel and audit flags
-                         (was_missing, is_zero_after_fill)
-          • summary    : Dictionary of aggregate fill statistics
-
-    Notes
-    -----
-    The returned DataFrame includes:
-        was_missing        : True for entries absent before reindexing
-        is_zero_after_fill : True where the final value equals zero
-
-    This function is intended for use after run_integrity_report and before
-    CLR transformation, ensuring that structural zeros and true gaps are
-    explicitly tracked for pseudocount-sensitive workflows.
+        {
+            "date_range": (start_date, end_date),
+            "filled_df":  panel_with_flags,
+            "summary": {
+                "total_groups": int,
+                "total_periods": int,
+                "total_rows": int,
+                "filled_missing": int,
+                "fill_value": float
+            }
+        }
     """
     # -------------------------------------------------
-    # Step A — Aggregate raw records into monthly counts
-    #    Retrieves:
-    #       • data       → cleaned monthly (group, month) counts
-    #       • start_date → earliest valid month in the dataset
-    #       • end_date   → latest valid month in the dataset
-    #    Ensures duplicates are removed and dates normalized before panel building.
+    # 2-1: Aggregate and extract global date bounds
     # -------------------------------------------------
     data_dict = _aggregate_counts(data_df)
     data      = data_dict["data"]
@@ -414,100 +403,68 @@ def fill_missing(
     end       = data_dict["end_date"]
 
     # -------------------------------------------------
-    # Step B — Build the complete expected panel index
-    #    unique_groups : all crime categories present in the data
-    #    full_range    : continuous monthly date range for the panel
-    #    full_index    : Cartesian product (group × month) defining full panel
+    # 2-2: Build complete group × date index
     # -------------------------------------------------
     unique_groups = data[group_col].unique()
-    full_range    = pd.date_range(
-        start=start, end=end, freq=freq, name=date_col
-    )
-    full_index    = pd.MultiIndex.from_product(
+    full_range    = pd.date_range(start=start, end=end, freq=freq, name=date_col)
+
+    full_index = pd.MultiIndex.from_product(
         [unique_groups, full_range],
         names=[group_col, date_col]
     )
 
     # -------------------------------------------------
-    # Step C — Align observed data to the full panel grid
-    #    Reindex onto full_index to:
-    #       • insert explicit NaNs for true missing (group, month) rows
-    #       • ensure sorted, complete panel structure for downstream checks
+    # 2-3: Reindex and fill missing entries
     # -------------------------------------------------
     panel = (
-        data
-        .set_index([group_col, date_col])   # use (group, month) as hierarchical index
-        .sort_index()                       # enforce deterministic ordering
-        .reindex(full_index)                # align to full grid, introducing gaps
+        data.set_index([group_col, date_col])
+            .reindex(full_index)
+            .sort_index()
     )
 
-    # -------------------------------------------------
-    # Step D — Mark true panel gaps
-    #    was_missing -> True where the (group, month) entry was absent
-    #    (i.e., NaN introduced during reindexing)
-    # -------------------------------------------------
+    # Audit flags
     panel["was_missing"] = panel[value_col].isna()
-
-    # -------------------------------------------------
-    # Step E - Fill structural gaps with a chosen value
-    #    Replaces NaNs (introduced during reindexing) with `fill_value`
-    #    so downstream analyses (e.g., CLR transforms) have explicit counts.
-    # -------------------------------------------------
-    panel[value_col] = panel[value_col].fillna(fill_value)
-
-    # -------------------------------------------------
-    # Step F — Flag structural zeros after filling
-    #    is_zero_after_fill -> True where the filled value equals zero
-    #    Helps distinguish true zeros from originally missing entries
-    # -------------------------------------------------
+    panel[value_col]     = panel[value_col].fillna(fill_value)
     panel["is_zero_after_fill"] = panel[value_col].eq(0)
 
     # -------------------------------------------------
-    # Step G — Summarize panel fill results
-    #    Provides high‑level metrics describing the constructed panel:
-    #       - total_groups   : number of unique crime categories
-    #       - total_periods  : number of months in the panel range
-    #       - total_rows     : full size of the (group × month) panel
-    #       - filled_missing : count of true gaps filled during reindexing
-    #       - fill_value     : value used to replace missing entries
-    # -------------------------------------------------
-    summary = {
-        "total_groups"  : len(unique_groups),
-        "total_periods" : len(full_range),
-        "total_rows"    : len(panel),
-        "filled_missing": int(panel["was_missing"].sum()),
-        "fill_value"    : fill_value,
-    }
-
-    # -------------------------------------------------
-    # Optional — Verbose summary of fill operation
-    #    Prints a compact human‑readable overview of:
-    #       • date range
-    #       • number of groups and periods
-    #       • full panel size
-    #       • number of true gaps filled
-    #       • fill value applied
-    # -------------------------------------------------
-    # Layout widths for summary printing
-    #    width  -> total line width
+    # 2-4: Optional diagnostics
     # -------------------------------------------------
     if verbose:
-        width = 40
-        print("\n" + "=" * width)
-        print(f"{'CRIME DATA FILLING SUMMARY':^{width}}")
-        print("=" * width)
-        print(f"Date range      : {start} to {end}")
-        print(f"Total groups    : {len(unique_groups):,}")
-        print(f"Total periods   : {len(full_range):,}")
-        print(f"Total rows      : {len(panel):,}")
-        print(f"Filled missing  : {int(panel['was_missing'].sum()):,}")
-        print(f"Fill value used : {fill_value}")
-        print("=" * width + "\n")
+        label_w = 30
+        border  = "=" * 66
+        line    = "-" * 66
 
+        print(f"\n{border}")
+        print(f" 🧩  CRIME DATA FILLING & PANEL ALIGNMENT")
+        print(f"{border}")
+
+        print(f"  • {'Date Range':<{label_w}} : {start} to {end}")
+        print(f"  • {'Total Groups':<{label_w}} : {len(unique_groups):,}")
+        print(f"  • {'Total Periods':<{label_w}} : {len(full_range):,}")
+
+        print(line)
+        print(f"  📦 {'Final Panel Size':<{label_w}} : {len(panel):,} rows")
+        print(f"  🩹 {'Filled Gaps':<{label_w}} : {int(panel['was_missing'].sum()):,} rows")
+        print(f"  🔢 {'Fill Value Used':<{label_w}} : {fill_value}")
+
+        print(line)
+        print(f" ✅ Audit flags: 'was_missing', 'is_zero_after_fill'")
+        print(f"{border}\n")
+
+    # -------------------------------------------------
+    # 2-5: Return structured output
+    # -------------------------------------------------
     return {
         "date_range": (start, end),
-        "filled_df" : panel.reset_index(),
-        "summary"   : summary,
+        "filled_df": panel.reset_index(),
+        "summary": {
+            "total_groups": len(unique_groups),
+            "total_periods": len(full_range),
+            "total_rows": len(panel),
+            "filled_missing": int(panel["was_missing"].sum()),
+            "fill_value": fill_value,
+        }
     }
 
 
@@ -515,247 +472,160 @@ def fill_missing(
 # 3. Validation function to check crime data integrity after filling
 # -------------------------------------------------------------------
 def validate_crime_data(
-    data                : pd.DataFrame,
-    zero_rate_threshold : float = 0.90,
-    group_col           : str   = config["_GROUP_KEY"],
-    date_col            : str   = config["_DATE_KEY"],
-    value_col           : str   = config["_COUNTER_KEY"]
+    data: pd.DataFrame,
+    zero_rate_threshold: float = 0.70,
+    group_col: str = _GROUP_KEY,
+    date_col: str = _DATE_KEY,
+    value_col: str = _COUNTER_KEY
 ) -> None:
     """
-    Validate structural integrity of a filled crime‑count panel.
+    Perform structural integrity checks on a crime panel dataset.
 
-    This function performs a comprehensive, multi‑stage validation of the
-    DataFrame produced by `fill_missing()`. It verifies that the panel is
-    complete, chronologically consistent, properly sorted, and free of
-    invalid values before applying the CLR transformation.
+    This validator inspects:
+        • Date dtype and global sorting
+        • Temporal continuity within each group
+        • Synchronization of period counts across groups
+        • Value integrity (no negatives, no NaNs)
+        • Duplicate (group, date) records
+        • Presence of audit columns from panel construction
+        • Overall and group-level sparsity
 
-    The validation pipeline consists of the following steps:
-
-      A. Date column dtype is datetime64
-      B. Date column is globally monotonic increasing
-      C. DataFrame is globally sorted by (group, date)
-      D. Dates within each group are monotonically increasing
-      E. All groups have the same number of periods
-      F. No negative crime‑count values
-      G. No remaining NaN values after filling
-      H. No duplicate (group, date) pairs
-      I. Row count matches n_groups × n_periods (full panel check)
-      J. Audit columns from fill_missing() are present
-      K. Zero‑inflation diagnostics (overall and per‑group)
+    Output is formatted as a vertically aligned diagnostic report
+    with PASS / FAIL / WARN indicators.
 
     Parameters
     ----------
     data : pd.DataFrame
-        Output DataFrame from `fill_missing()['filled_df']`. Must contain
-        `group_col`, `date_col`, and `value_col`.
+        Crime panel dataset.
 
-    zero_rate_threshold : float, default 0.90
-        Threshold for flagging excessive zero inflation. Applied to both
-        the overall panel and individual groups.
+    zero_rate_threshold : float, default 0.70
+        Groups exceeding this zero-rate threshold are flagged.
 
-    group_col : str, default config["_GROUP_KEY"]
-        Column identifying the crime category.
+    group_col : str
+        Group identifier column.
 
-    date_col : str, default config["_DATE_KEY"]
-        Column identifying the observation month.
+    date_col : str
+        Date column (must be datetime-like).
 
-    value_col : str, default config["_COUNTER_KEY"]
-        Column containing crime‑count values.
+    value_col : str
+        Numeric count column.
 
     Returns
     -------
     None
-        Prints a structured validation report. No exceptions are raised;
-        all issues are reported via printed messages.
-
-    Notes
-    -----
-    - Zero‑rate thresholding (Step K) is applied independently to the
-      overall panel and to each group. High zero rates may reflect
-      structural sparsity rather than overfilling; compare with
-      `run_integrity_report()` coverage ratios.
-
-    - Audit columns (`was_missing`, `is_zero_after_fill`) are added by
-      `fill_missing()`. Their absence indicates the DataFrame was not
-      produced by that function.
+        Prints a formatted validation report.
     """
     # -------------------------------------------------
-    # Step A — Print validation header
-    #    Displays a standardized banner for the
-    #    crime‑data validation summary section.
+    # Formatting configuration
     # -------------------------------------------------
-    # Layout widths for printing
-    #    width  -> total line width
-    #    width_2 -> secondary column width
-    # -------------------------------------------------  
-    width, width_2 = 66, 45
-    print("\n" + "=" * width)
-    print(f"{'CRIME DATA VALIDATION CHECK':^{width}}")
-    print("=" * width)
+    header_w = 80
+    label_w  = 26
+    list_w   = 50
+
+    border = "=" * header_w
+    line   = "-" * header_w
+
+    print(f"\n{border}")
+    print(f"{'🛡️  CRIME DATA STRUCTURAL INTEGRITY CHECK':^{header_w}}")
+    print(f"{border}")
+
+    # Helper for aligned logging
+    def log(icon, label, status, detail):
+        print(f"  {icon} {label:<{label_w}} : {status:<4} | {detail}")
 
     # -------------------------------------------------
-    # Step A — Validate date column dtype
-    #    CLR transformation requires a proper datetime64
-    #    column to support era slicing and monthly alignment.
+    # 3-A: Date dtype
     # -------------------------------------------------
-    if not pd.api.types.is_datetime64_any_dtype(data[date_col]):
-        print("FAIL  Date column is not datetime64")
-    else:
-        print("PASS  Date column is datetime64")
+    is_dt = pd.api.types.is_datetime64_any_dtype(data[date_col])
+    log("✅" if is_dt else "❌", "Date Dtype",
+        "PASS" if is_dt else "FAIL",
+        "datetime64 required")
 
     # -------------------------------------------------
-    # Step B — Validate global sort order
-    #    Confirms the dataset is ordered by (group, date)
-    #    exactly as required for panel construction.
-    #    Ensures each group’s timeline is contiguous and
-    #    prevents interleaving that can break gap detection.
+    # 3-B: Global sorting
     # -------------------------------------------------
-    globally_sorted = (
-        data
-        .sort_values([group_col, date_col])
-        .reset_index(drop=True)
-        .equals(data.reset_index(drop=True))
-    )
-    if globally_sorted:
-        print("PASS  Data is globally sorted by group and date")
-    else:
-        print("FAIL  Data is not sorted by group and date")
+    expected = data.sort_values([group_col, date_col]).reset_index(drop=True)
+    is_sorted = expected.equals(data.reset_index(drop=True))
+    log("✅" if is_sorted else "❌", "Global Sort",
+        "PASS" if is_sorted else "FAIL",
+        "Group-Date ordering")
 
     # -------------------------------------------------
-    # Step C — Validate within‑group date ordering
-    #    Ensures each crime category has dates that increase
-    #    monotonically. Detects groups where the timeline is
-    #    scrambled, which can break panel continuity checks.
+    # 3-C: Temporal continuity within groups
     # -------------------------------------------------
     bad_groups = [
         g for g, sub in data.groupby(group_col, observed=False)
         if not sub[date_col].is_monotonic_increasing
     ]
-    if not bad_groups:
-        print("PASS  All groups have monotonically increasing dates")
-    else:
-        print(f"FAIL  {len(bad_groups)} group(s) have unordered dates")
-        for g in bad_groups:
-            print(f"        {g}")
+    log("✅" if not bad_groups else "❌", "Temporal Continuity",
+        "PASS" if not bad_groups else "FAIL",
+        "Linear timeline" if not bad_groups else f"{len(bad_groups)} unordered groups")
 
     # -------------------------------------------------
-    # Step D — Validate period count consistency
-    #    Ensures every group spans the same number of
-    #    monthly periods. Detects truncated or irregular
-    #    timelines that would break panel alignment.
+    # 3-D: Period synchronization
     # -------------------------------------------------
-    period_counts = data.groupby(
-        group_col, observed=False
-    )[date_col].nunique()
-
-    if period_counts.nunique() == 1:
-        print(f"PASS  All groups have {period_counts.iloc[0]} periods")
-    else:
-        print("FAIL  Inconsistent period counts across groups")
-        print(
-            period_counts[
-                period_counts != period_counts.mode()[0]
-            ].to_string()
-        )
+    periods = data.groupby(group_col, observed=False)[date_col].nunique()
+    sync = periods.nunique() == 1
+    log("✅" if sync else "❌", "Period Sync",
+        "PASS" if sync else "FAIL",
+        f"All groups have {periods.iloc[0]} months" if sync else "Inconsistent months")
 
     # -------------------------------------------------
-    # Step E — Validate non‑negativity of counts
-    #    Ensures no crime‑count values are negative.
-    #    Negative counts indicate data corruption or
-    #    preprocessing errors that must be corrected.
+    # 3-E: Value integrity
     # -------------------------------------------------
     n_neg = int((data[value_col] < 0).sum())
-    if n_neg == 0:
-        print("PASS  No negative values")
-    else:
-        print(f"FAIL  {n_neg} negative count(s) detected")
-
-    # -------------------------------------------------
-    # Step F — Validate absence of NaNs after filling
-    #    Confirms that all missing values were handled
-    #    during preprocessing. Any remaining NaNs indicate
-    #    upstream data issues requiring correction.
-    # -------------------------------------------------
     n_nan = int(data[value_col].isna().sum())
-    if n_nan == 0:
-        print("PASS  No NaNs remain")
-    else:
-        print(f"FAIL  {n_nan} NaN(s) remain after fill")
+
+    log("✅" if n_neg == 0 else "❌", "Value Range",
+        "PASS" if n_neg == 0 else "FAIL",
+        f"{n_neg} negative values")
+
+    log("✅" if n_nan == 0 else "❌", "NaN Cleanup",
+        "PASS" if n_nan == 0 else "FAIL",
+        f"{n_nan} missing entries")
 
     # -------------------------------------------------
-    # Step G — Validate absence of duplicate (group, date) pairs
-    #    Ensures each group has exactly one record per period.
-    #    Duplicate (group, date) rows indicate aggregation or
-    #    ingestion errors that must be resolved before panel use.
+    # 3-F: Duplicate records
     # -------------------------------------------------
     n_dupes = int(data.duplicated([group_col, date_col]).sum())
-    if n_dupes == 0:
-        print("PASS  No duplicate (group, date) pairs")
-    else:
-        print(f"FAIL  {n_dupes} duplicate (group, date) pair(s) found")
+    log("✅" if n_dupes == 0 else "❌", "Record Uniqueness",
+        "PASS" if n_dupes == 0 else "FAIL",
+        f"{n_dupes} duplicates")
 
     # -------------------------------------------------
-    # Step H — Validate full panel size
-    #    Confirms the dataset forms a complete panel:
-    #    every group must appear in every period exactly once.
-    #    Detects missing rows, truncated groups, or overfilled panels.
-    # -------------------------------------------------
-    n_groups  = data[group_col].nunique()
-    n_periods = data[date_col].nunique()
-    expected  = n_groups * n_periods
-    actual    = len(data)
-    if actual == expected:
-        print(f"PASS  Row count matches panel size "
-              f"({n_groups} x {n_periods} = {expected:,})")
-    else:
-        print(f"FAIL  Row count mismatch  "
-              f"expected={expected:,}  "
-              f"actual={actual:,}  "
-              f"diff={actual - expected:+,}")
-
-    # -------------------------------------------------
-    # Step I — Validate presence of audit columns
-    #    Confirms that diagnostic columns created during
-    #    fill_missing() are present. Their absence suggests
-    #    the fill step may not have been executed.
+    # 3-G: Audit columns
     # -------------------------------------------------
     for col in ["was_missing", "is_zero_after_fill"]:
-        if col in data.columns:
-            print(f"PASS  Audit column '{col}' present")
-        else:
-            print(f"WARN  Audit column '{col}' missing - "
-                  f"was fill_missing() called before validation?")
+        present = col in data.columns
+        log("✅" if present else "⚠️", f"Audit: {col}",
+            "PASS" if present else "WARN",
+            "Traceability")
 
     # -------------------------------------------------
-    # Step J — Evaluate zero‑value prevalence
-    #    Reports overall sparsity and flags groups whose
-    #    zero‑rate exceeds a configured threshold. High
-    #    zero‑rates may indicate structural sparsity or
-    #    over‑aggressive filling during preprocessing.
+    # 3-H: Overall sparsity
     # -------------------------------------------------
+    print(line)
     zero_rate = (data[value_col] == 0).mean()
-    print(f"INFO  Overall zero rate : {zero_rate:.2%}")
-    if zero_rate > .90:
-        print(f"WARN  Overall zero rate exceeds threshold "
-              f"({zero_rate:.0%}) - "
-              f"check for overfilling or structural sparsity")
+    log("🔍", "Overall Zero Rate", "INFO", f"{zero_rate:.2%}")
 
-    print("\n" + "-" * width)
-    group_zero_rates = (
-        data
-        .groupby(group_col, observed=False)[value_col]
-        .apply(lambda x: (x == 0).mean())
-        .sort_values(ascending=False)
+    # -------------------------------------------------
+    # 3-I: Group-level sparsity
+    # -------------------------------------------------
+    print(f"\n 🧪  SPARSITY EXPOSURE BY CATEGORY")
+    print(f"    (Threshold: > {zero_rate_threshold:.0%} zeros)")
+
+    group_rates = (
+        data.groupby(group_col, observed=False)[value_col]
+            .apply(lambda x: (x == 0).mean())
+            .sort_values(ascending=False)
     )
-    flagged = group_zero_rates[group_zero_rates > zero_rate_threshold]
+
+    flagged = group_rates[group_rates > zero_rate_threshold]
 
     if not flagged.empty:
-        print(f"Groups exceeding zero rate threshold "
-              f"({zero_rate_threshold:.2%}):")
         for group, rate in flagged.items():
-            print(f"-> {group:<{width_2}} {1-rate:.2%} zero rate")
+            print(f"    ↳ {group:<{list_w}} | {rate:>7.1%} zero rate")
     else:
-        print(f"  No groups exceed zero rate threshold "
-              f"({zero_rate_threshold:.2%})")
+        print("    ✨ No groups exceed the sparsity threshold.")
 
-    print("=" * width + "\n")
+    print(f"{border}\n")

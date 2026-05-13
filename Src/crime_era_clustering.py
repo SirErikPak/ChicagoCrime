@@ -99,17 +99,17 @@ def linkage_matrix(X, method='average', metric='correlation'):
 
     Parameters:
         X      : np.ndarray or pd.DataFrame - input data
-                 - If metric='precomputed': square (n×n) or condensed (n*(n-1)/2,)
-                   distance matrix. For crime data: 26×26 or length-325 vector.
-                 - Otherwise: raw feature matrix (n_samples × n_features).
-                   For crime data: (26 crimes × N time points) - rows are crimes.
+                 - If metric='precomputed': square (nXn) or condensed (n*(n-1)/2,)
+                   distance matrix. For crime data: 26X26 or length-325 vector.
+                 - Otherwise: raw feature matrix (n_samples X n_features).
+                   For crime data: (26 crimes X N time points) - rows are crimes.
         method : str - linkage method ('single', 'complete', 'average').
                  'ward' is not supported for non-Euclidean metrics.
         metric : str - any scipy-valid metric string ('correlation', 'euclidean',
                  'cityblock', 'cosine', etc.), or 'precomputed'.
 
     Returns:
-        Z : np.ndarray - linkage matrix (n-1 × 4)
+        Z : np.ndarray - linkage matrix (n-1 X 4)
             columns: [cluster_i, cluster_j, distance, n_items]
 
     Raises:
@@ -119,8 +119,8 @@ def linkage_matrix(X, method='average', metric='correlation'):
         ValueError : if X is 2D precomputed and the matrix is not square
 
     Notes:
-        - For correlation distance, X must be the raw feature matrix (n × p)
-          where rows are the items being clustered (e.g., 26 crimes × N years).
+        - For correlation distance, X must be the raw feature matrix (n X p)
+          where rows are the items being clustered (e.g., 26 crimes X N years).
           A transposed matrix would cluster features instead of samples.
         - For precomputed distance, symmetry, and zero-diagonal are assumed valid
           (validated upstream in the notebook). squareform checks=False is used
@@ -144,7 +144,7 @@ def linkage_matrix(X, method='average', metric='correlation'):
         if X.ndim == 2:
             if X.shape[0] != X.shape[1]:
                 raise ValueError(
-                    f"Precomputed square matrix must be symmetric (n×n). "
+                    f"Precomputed square matrix must be symmetric (nXn). "
                     f"Got shape {X.shape}."
                 )
             condensed = squareform(X, checks=False)
@@ -174,7 +174,7 @@ def linkage_matrix(X, method='average', metric='correlation'):
         if X.ndim != 2:
             raise ValueError(
                 f"For metric='{metric}', X must be a 2D feature matrix "
-                f"(n_samples × n_features). Got {X.ndim}D array. "
+                f"(n_samples X n_features). Got {X.ndim}D array. "
                 f"For crime data: shape should be (26, N_timepoints)."
             )
         Z = linkage(X, method=method, metric=metric)
@@ -193,7 +193,7 @@ def inconsistency_matrix(Z, depth=DEFAULT_DEPTH):
                 Higher depth = more context for small datasets
 
     Returns:
-        I : np.ndarray - inconsistency matrix (n-1 × 4)
+        I : np.ndarray - inconsistency matrix (n-1 X 4)
             columns: [mean_distance, std_distance, n_merges, inconsistency_coeff]
 
     Notes:
@@ -490,11 +490,11 @@ def compute_correlation_distance_matrix(X, labels=None):
     research question: COVID-19 reorganized directional co-movement of crimes.
 
     Parameters:
-        X      : np.ndarray or pd.DataFrame - feature matrix (n_samples × n_features)
+        X      : np.ndarray or pd.DataFrame - feature matrix (n_samples X n_features)
         labels : list - optional row/column labels for output DataFrame
 
     Returns:
-        dist_matrix : pd.DataFrame - symmetric distance matrix (n × n)
+        dist_matrix : pd.DataFrame - symmetric distance matrix (n X n)
     """
     if isinstance(X, pd.DataFrame):
         if labels is None:
@@ -537,7 +537,7 @@ def compute_dtw_distance_matrix(
         option          : str - 'A' (concatenated) or 'B' (era-separated)
 
     Returns:
-        dist_matrix : pd.DataFrame - symmetric DTW distance matrix (n × n)
+        dist_matrix : pd.DataFrame - symmetric DTW distance matrix (n X n)
 
     Notes:
         - Uses tslearn cdist_dtw with Sakoe-Chiba band constraint
@@ -640,13 +640,13 @@ def compute_dtw_single_era(
                            pre_covid=230 months, covid=34 months, post_covid=36 months
 
     Returns:
-        dist_matrix : pd.DataFrame - symmetric DTW distance matrix (n × n)
+        dist_matrix : pd.DataFrame - symmetric DTW distance matrix (n X n)
 
     Notes:
-        - Warping window = max(1, int(warping_pct × series_length))
-        - Pre-COVID:  warping_window = max(1, int(0.10 × 230)) = 23 months
-        - COVID:      warping_window = max(1, int(0.10 × 34))  = 3 months
-        - Post-COVID: warping_window = max(1, int(0.10 × 36))  = 3 months
+        - Warping window = max(1, int(warping_pct X series_length))
+        - Pre-COVID:  warping_window = max(1, int(0.10 X 230)) = 23 months
+        - COVID:      warping_window = max(1, int(0.10 X 34))  = 3 months
+        - Post-COVID: warping_window = max(1, int(0.10 X 36))  = 3 months
     """
     if not _TSLEARN_AVAILABLE:
         raise ImportError(
@@ -730,7 +730,7 @@ def compare_dtw_era_rhythms(dtw_pre, dtw_covid, dtw_post):
 
     Notes:
         - Spearman rho values are valid measures of rank agreement between matrices.
-        - P-values are approximate: the 325 pairwise distances (26×25/2) are not
+        - P-values are approximate: the 325 pairwise distances (26X25/2) are not
           independent - they share row/column entries - which violates the standard
           independence assumption and makes p-values anti-conservative (too small).
           Treat p-values as indicative rather than exact.

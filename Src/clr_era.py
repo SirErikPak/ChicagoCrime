@@ -10,6 +10,7 @@ from statsmodels.stats.multitest import multipletests
 from sklearn.covariance import LedoitWolf
 from sklearn.decomposition import PCA
 from typing import Dict, Optional, Tuple, Any
+import clr_config as cfg
 
 
 # -----------------------------------------------------------------------------
@@ -17,438 +18,440 @@ from typing import Dict, Optional, Tuple, Any
 # -----------------------------------------------------------------------------
 def slice_clr_into_eras(clr_dict, era_boundaries, eps):
     """
-    Slice a CLR matrix into Pre-COVID, COVID, and Post-COVID eras
-    using date-driven administrative boundaries derived from the
-    era_boundaries dictionary rather than hardcoded row indices.
+    Slice a CLR-transformed matrix into temporal eras (Pre‑COVID, COVID, Post‑COVID).
 
-    Boundaries are resolved by locating the last row of each era's
-    end date in the CLR index. Handles both slice and integer returns
-    from get_loc to support unique and non-unique DatetimeIndex types.
+    The function:
+        - Extracts the CLR matrix for a given epsilon
+        - Uses date boundaries to determine slice endpoints
+        - Returns a dictionary of era-specific CLR matrices
+        - Prints a compact diagnostic report summarizing span and date ranges
 
     Parameters
     ----------
-    clr_dict       : dict
-        Dictionary mapping epsilon values to CLR DataFrames.
-        Each DataFrame has a DatetimeIndex and K crime type columns.
-        Typically, the output of the CLR transformation pipeline.
+    clr_dict : dict
+        Mapping: epsilon → CLR DataFrame (indexed by datetime).
+
     era_boundaries : dict
-        Dictionary mapping era labels to their end dates.
-        Expected keys and format:
-            'Pre-COVID'  : 'YYYY-MM'  last month of the Pre-COVID era
-            'COVID'      : 'YYYY-MM'  last month of the COVID era
-            'Post-COVID' : 'YYYY-MM'  last month of the Post-COVID era
-        Example:
-            {
-                'Pre-COVID'  : '2020-02',
-                'COVID'      : '2022-12',
-                'Post-COVID' : '2025-12'
-            }
-    eps            : float
-        Epsilon (pseudocount) value used as key into clr_dict.
-        Selects the CLR DataFrame for the specified pseudocount.
-        Example: 0.02
+        Required keys:
+            'Pre-COVID' : last date of pre‑COVID era
+            'COVID'     : last date of COVID era
+
+    eps : float or str
+        Epsilon key used to select the CLR matrix.
 
     Returns
     -------
-    dict with keys:
-        pre_covid  : pd.DataFrame  CLR rows for the Pre-COVID era
-        covid      : pd.DataFrame  CLR rows for the COVID era
-        post_covid : pd.DataFrame  CLR rows for the Post-COVID era
-
-    Raises
-    ------
-    KeyError
-        If 'Pre-COVID' or 'COVID' keys are absent from era_boundaries,
-        or if their date values are not present in the CLR index.
-
-    Notes
-    -----
-    Post-COVID slice uses all rows after COVID_END and does not
-    require an explicit end boundary - it extends to the last
-    available row in the CLR matrix.
-
-    get_loc returns a slice for non-unique index labels and an int
-    for unique labels. get_end_idx handles both cases to prevent
-    AttributeError on standard monthly DatetimeIndex inputs.
+    dict
+        {
+            'Pre-COVID' : DataFrame,
+            'COVID'     : DataFrame,
+            'Post-COVID': DataFrame
+        }
     """
-    # Extract CLR DataFrame for the specified pseudocount epsilon
+    # -------------------------------------------------
+    # 1. Extract CLR matrix and validate boundaries
+    # -------------------------------------------------
+    if eps not in clr_dict:
+        raise KeyError(f"Epsilon {eps} not found in clr_dict keys.")
+
     clr_df = clr_dict[eps]
 
-    # Helper: resolve end date string to exclusive integer row position
-    # get_loc returns int for unique index, slice for non-unique index
-    # int case: add 1 to convert from inclusive to exclusive bound
-    # slice case: .stop is already the exclusive upper bound
+    required = ["Pre-COVID", "COVID"]
+    missing = [k for k in required if k not in era_boundaries]
+    if missing:
+        raise KeyError(f"Missing required era boundaries: {missing}")
+
+    # -------------------------------------------------
+    # 2. Helper: resolve boundary index (inclusive end)
+    # -------------------------------------------------
     def get_end_idx(date_str):
-        loc = clr_df.index.get_loc(date_str)
-        return loc.stop if isinstance(loc, slice) else loc + 1
+        try:
+            loc = clr_df.index.get_loc(date_str)
+            # get_loc may return a slice for non-unique indexes
+            return loc.stop if isinstance(loc, slice) else loc + 1
+        except KeyError:
+            raise KeyError(f"Date boundary '{date_str}' not found in CLR index.")
 
-    # Resolve era boundaries from date strings to row positions
-    # Direct key access raises KeyError immediately if the boundary is missing
-    # preventing UnboundLocalError on the slice lines below
-    try:
-        PRE_END   = get_end_idx(era_boundaries['Pre-COVID'])
-        COVID_END = get_end_idx(era_boundaries['COVID'])
-    except KeyError as e:
-        raise KeyError(
-            f"Era boundary {e} not found in era_boundaries. "
-            f"Expected keys: 'Pre-COVID', 'COVID', 'Post-COVID'."
-        )
+    # -------------------------------------------------
+    # 3. Slice into eras
+    # -------------------------------------------------
+    pre_end   = get_end_idx(era_boundaries["Pre-COVID"])
+    covid_end = get_end_idx(era_boundaries["COVID"])
 
-    # Slice the CLR matrix into three non-overlapping era segments
-    # Post-COVID extends to the last row - no end boundary needed
     eras = {
-        'pre_covid' : clr_df.iloc[:PRE_END],
-        'covid'     : clr_df.iloc[PRE_END:COVID_END],
-        'post_covid': clr_df.iloc[COVID_END:],
+        "Pre-COVID":  clr_df.iloc[:pre_end],
+        "COVID":      clr_df.iloc[pre_end:covid_end],
+        "Post-COVID": clr_df.iloc[covid_end:],
     }
 
-    # Print CLR matrix shape and index bounds for audit trail
-    print(f"CLR matrix shape        : {clr_df.shape}")
-    print(f"First 3 index values    : {clr_df.index[:3].tolist()}")
-    print(f"Last 3 index values     : {clr_df.index[-3:].tolist()}")
+    # -------------------------------------------------
+    # 4. Diagnostic report
+    # -------------------------------------------------
+    header_w = 64
+    label_w  = 18
+    border   = "=" * 60
+    line     = "-" * 60
 
-    # Print era shapes - loop handles additional eras without code changes
-    print(f"\nEra Shape Verification:")
-    for label, df in eras.items():
-        print(f"  {label:<12} : {df.shape}")
+    print(f"\n{border}")
+    print(f" 📅  CLR TEMPORAL SEGMENTATION REPORT (ε = {eps})")
+    print(f"{border}")
 
-    # Print era date ranges to confirm correct slicing alignment
-    print(f"\nEra Boundary Verification:")
+    print(f"  • {'Total Matrix':<{label_w}} : {clr_df.shape[0]} months x {clr_df.shape[1]} crimes")
+    print(f"  • {'Date Horizon':<{label_w}} : "
+          f"{clr_df.index[0].strftime('%Y-%m')} to {clr_df.index[-1].strftime('%Y-%m')}")
+
+    print(line)
+    print(f"  {'Era Label':<{label_w}} | {'Span (T)':<12} | {'Date Range':<20}")
+    print(line)
+
     for label, df in eras.items():
-        print(f"  {label:<12} : "
-              f"{df.index[0].strftime('%Y-%m')} to "
-              f"{df.index[-1].strftime('%Y-%m')}  "
-              f"(T={len(df)})")
+        if df.empty:
+            print(f"  ⚠️ {label:<{label_w-2}} | EMPTY SLICE  | N/A")
+        else:
+            span = f"{len(df)} months"
+            date_range = f"{df.index[0].strftime('%Y-%m')} to {df.index[-1].strftime('%Y-%m')}"
+            print(f"  {label:<{label_w}} | {span:<12} | {date_range}")
+
+    print(f"{border}\n")
 
     return eras
 
 
-# -----------------------------------------------------------------------------
-# 2. Function to compute distributional parameters for each era
-# -----------------------------------------------------------------------------
-def compute_era_distribution_parameters(eras_dict,
-                                        top_display=True,
-                                        n_rows=10):
+# ------------------------------------------------------------------------------
+# 2-0. Main function to compute era distribution parameters and pairwise deltas with 
+#      optional verbose reporting
+# ------------------------------------------------------------------------------
+def compute_era_distribution_parameters(eras_dict, sparse_cats=None, verbose=True, 
+                                        report_width=95, precision_threshold=9):
     """
-    Compute per-era distributional parameters (mean, std, covariance)
-    and absolute differences between eras.
-
-    Computes three categories of statistics for Pre-COVID, COVID, and
-    Post-COVID eras, then reports pairwise differences across all three
-    era comparisons. Covariance matrices are estimated using both raw
-    sample covariance and Ledoit-Wolf shrinkage for stability.
+    Compute per‑era distribution statistics (means, stds, covariances, shrinkage, 
+    conditioning, and pairwise deltas) for a dictionary of era‑segmented DataFrames.
 
     Parameters
     ----------
-    eras_dict   : dict
-        Output of slice_clr_into_eras(). Expected keys:
-            'pre_covid'  : (230, K) CLR DataFrame
-            'covid'      : (34,  K) CLR DataFrame
-            'post_covid' : (40,  K) CLR DataFrame
-    top_display : bool
-        If True, prints the top n_rows mean and volatility shifts
-        ranked by absolute magnitude for all three era pairs.
-        Default True.
-    n_rows      : int
-        Number of top shifts to display per comparison.
-        Default 10.
+    eras_dict : dict[str, pd.DataFrame]
+        A mapping of era names → DataFrames containing feature columns.
+        Each DataFrame is treated as one "era" whose distribution parameters 
+        will be computed independently.
+
+    sparse_cats : list[str] or None, optional
+        Column names to drop from each era before computing statistics.
+        Useful for removing sparse or categorical columns that should not 
+        participate in covariance estimation.
+
+    verbose : bool, optional
+        If True, prints a formatted report using `print_era_distribution_report`.
+
+    report_width : int, optional
+        Width passed to the reporting function for formatting output.
+
+    precision_threshold : int, optional
+        Precision threshold passed to the reporting function.
 
     Returns
     -------
-    dict with keys:
-        era_means    : DataFrame  mean CLR per era + pairwise deltas
-        era_stds     : DataFrame  std dev per era + pairwise deltas
-        era_covs     : dict       raw sample covariance per era
-                                  reference only - not used for inference
-        era_covs_lw  : dict       Ledoit-Wolf regularized covariance per era
-                                  used for all matrix-based inference
-        lw_shrinkage : dict       LW shrinkage intensity alpha per era
-        cond_numbers : dict       raw and LW condition numbers per era
+    dict
+        A dictionary containing:
+            - 'era_names' : list of era names
+            - 'era_means' : DataFrame of per‑era means and pairwise deltas
+            - 'era_stds'  : DataFrame of per‑era stds and pairwise deltas
+            - 'era_covs' : dict of raw covariance matrices
+            - 'era_covs_lw' : dict of Ledoit‑Wolf shrinkage covariance matrices
+            - 'lw_shrinkage' : dict of shrinkage intensities
+            - 'cond_numbers' : dict of raw and LW covariance condition numbers
+            - 'pairs' : list of (earlier, later, label) tuples for deltas
+            - 'sparse_cats' : list of dropped columns
 
     Notes
     -----
-    Covariance estimation:
-      Raw sample covariance (pd.cov) is stored for reference only.
-      Ledoit-Wolf shrinkage is applied for all downstream matrix-based
-      procedures (PCA, Hotelling T2, KL divergence). Shrinkage is
-      especially important for COVID (T=34, T/K=1.31) and Post-COVID
-      (T=40, T/K=1.54) where raw matrices are ill-conditioned.
+    - No global variables are referenced; all formatting parameters are passed in.
+    - Covariance matrices are computed twice per era: raw and Ledoit‑Wolf.
+    - Pairwise deltas are computed vectorized across all eras.
+    """
+    # ------------------------------------------------------------------------------ 
+    # 2-0-A: Data Preparation & Normalize sparse category list and drop those columns 
+    #      from each era DataFrame
+    # ------------------------------------------------------------------------------
+    sparse_cats = sorted(list(set(sparse_cats))) if sparse_cats else []
+    eras = {n: df.drop(columns=sparse_cats, errors='ignore') for n, df in eras_dict.items()}
+    era_names = list(eras.keys())
+    era_date_ranges = {}  # To store date ranges for reporting
 
-    Stability threshold:
-      Stability flag is set to True if log10(Cond# LW) < 8,
-      meaning fewer than 8 digits of numerical precision are lost
-      during matrix inversion (>7 digits retained).
-    """                                                    
+    # ------------------------------------------------------------------------------
+    # 2-0-B: Compute per‑era means and standard deviations for all features, storing 
+    #      in DataFrames.
+    # -------------------------------------------------------------------------------
+    era_means = pd.DataFrame({n: df.mean() for n, df in eras.items()})
+    era_stds  = pd.DataFrame({n: df.std()  for n, df in eras.items()})
 
-    # Normalize era keys to consistent labels used throughout all
-    # downstream functions — decouples internal naming from eras_dict keys
-    eras = {
-        'Pre-COVID' : eras_dict['pre_covid'],
-        'COVID'     : eras_dict['covid'],
-        'Post-COVID': eras_dict['post_covid'],
-    }
+    # ------------------------------------------------------------------------------
+    # 2-0-C: Compute covariance matrices for each era, both raw and with Ledoit‑Wolf 
+    #      shrinkage. 
+    # ------------------------------------------------------------------------------
+    era_covs, era_covs_lw, lw_shrinkage, cond_numbers = {}, {}, {}, {}
 
-    # Step 1 - Compute base distributional statistics
-    era_means = pd.DataFrame(
-        {name: df.mean(axis=0) for name, df in eras.items()}
-    )
-    era_stds  = pd.DataFrame(
-        {name: df.std(axis=0)  for name, df in eras.items()}
-    )
-    # -----------------------------------------------------------------------
-    # Step 2-1: Raw sample covariance - stored for reference only, not used for inference
-    # -----------------------------------------------------------------------
-    era_covs     = {}
-    era_covs_lw  = {}
-    lw_shrinkage = {}
-    cond_numbers = {}
-
-    # Loop through eras to compute raw and LW covariance matrices, shrinkage intensity, and condition numbers
+    # Iterate through eras to compute raw covariance, Ledoit‑Wolf covariance, 
+    # shrinkage, and condition numbers.
     for name, df in eras.items():
+        # Store the date range for this era in a dictionary for reporting purposes.
+        start_date            = df.index.min().strftime('%Y-%m')
+        end_date              = df.index.max().strftime('%Y-%m')
+        era_date_ranges[name] = (start_date, end_date)
 
-        # Raw sample covariance — near-singular for COVID (T/K=1.31)
-        # and Post-COVID (T/K=1.54) due to CLR zero-sum constraint
-        # stored for reference and condition number comparison only
-        raw_cov          = df.cov()
-        era_covs[name]   = raw_cov
+        raw_cov = df.cov()
+        era_covs[name] = raw_cov
 
-        # LW shrinks eigenvalues toward a scaled identity:
-        # Σ_LW = (1-α)·S + α·μI
-        # α is selected analytically to minimize Frobenius estimation error
-        # higher α = more regularization = applied when T/K is small
-        lw               = LedoitWolf(assume_centered=False).fit(df)
-        era_covs_lw[name] = pd.DataFrame(
-            lw.covariance_,
-            index   = df.columns,
-            columns = df.columns
-        )
-        lw_shrinkage[name] = lw.shrinkage_
-
-        # Condition number = largest eigenvalue / smallest eigenvalue
-        # Raw ~1e17: CLR rank deficiency makes the smallest eigenvalue ≈ 0
-        # LW  ~50-500: shrinkage inflates the smallest eigenvalue away from 0
-        cond_numbers[name] = {
-            'raw': np.linalg.cond(raw_cov.values),
-            'lw' : np.linalg.cond(lw.covariance_),
-        }
-    # -----------------------------------------------------------------------
-    # Step 2-2: Compute pairwise differences in means and std devs between eras
-    # pairs = (subtrahend era, minuend era, output column name)
-    # positive delta = metric was higher in the earlier era
-    # negative delta = metric was higher in the later era
-    # -----------------------------------------------------------------------    
-    pairs = [
-        ("Pre-COVID", "COVID",      "Pre_minus_COVID"),
-        ("COVID",     "Post-COVID", "COVID_minus_Post"),
-        ("Pre-COVID", "Post-COVID", "Pre_minus_Post"),
-    ]
-    for start, end, col in pairs:
-        era_means[col] = era_means[start] - era_means[end]
-        era_stds[col]  = era_stds[start]  - era_stds[end]
-    # -----------------------------------------------------------------------
-    # Step 2-3: Print mean and std dev tables with clear labels and formatting
-    # -----------------------------------------------------------------------
-    for label, df in [("MEAN CLR VECTOR", era_means),
-                       ("STD DEV",         era_stds)]:
-        print("=" * 125)
-        print(f"{label} PER ERA  "
-              f"(rows=crime type, cols=era & comparisons)")
-        print("=" * 125)
-        print(df.round(4).to_string())
-        print()
-    # -----------------------------------------------------------------------
-    # Step 2-4: Print covariance matrix shapes to confirm they are square and 
-    # match the number of features K
-    # -----------------------------------------------------------------------
-    print("=" * 70)
-    print(f"{'COVARIANCE MATRIX SHAPES':^70}")
-    print("=" * 70)
-    for name, cov in era_covs.items():
-        K = cov.shape[0]
-        print(f"  {name:<12}: {str(cov.shape):<12} "
-              f"-> expected ({K}, {K})")
+        # Ledoit‑Wolf shrinkage is applied to the raw data (not the covariance) 
+        # to get the regularized covariance matrix.
+        lw = LedoitWolf(assume_centered=False).fit(df)
+        era_covs_lw[name] = pd.DataFrame(lw.covariance_, index=df.columns, columns=df.columns)
         
-    # -----------------------------------------------------------------------
-    # Step 2-5: Covariance stability report with condition numbers and shrinkage intensity
-    # -----------------------------------------------------------------------
-    print()
-    print("=" * 70)
-    print(f"{'COVARIANCE STABILITY REPORT':^70}")
-    print("=" * 70)
-    print(f"  {'Era':<12} {'Cond# Raw':>12} {'Cond# LW':>12} "
-          f"{'Shrinkage α':>12}  {'Stability':>10}")
-    print(f"  {'-'*68}")
-
-    # Loop through eras to report condition numbers, shrinkage intensity, and stability flag
-    for name in eras:
-        cn = cond_numbers[name]
-        α  = lw_shrinkage[name]
-
-        # log10(κ) = digits of precision lost during matrix inversion
-        # threshold < 8 ensures at least 7 significant digits are retained
-        # safe for Hotelling T², KL divergence, and Mahalanobis distance
-        digits_lost = np.log10(cn['lw']) if cn['lw'] > 0 else 0
-        usable      = digits_lost < 8
-        flag        = 'OK' if usable else 'WARN'
-
-        print(f"  {name:<12} {cn['raw']:>12.1e} {cn['lw']:>12.1f} "
-              f"{α:>12.4f}  {flag:^10}")
-
-    # Interpretation guide for covariance stability report
-    print("=" * 70)
-    print()
-    print("  Cond# Raw  : sample covariance - reference only, "
-          "CLR rank deficiency expected")
-    print("  Cond# LW   : Ledoit-Wolf regularized - "
-          "used for all matrix-based inference")
-    print("  Shrinkage α: 0.0 = no shrinkage applied, "
-          "1.0 = full shrinkage applied")
-    print("  Stability  : OK if log10(Cond# LW) < 8  "
-          "(>7 digits of precision retained)")
-
-    # -----------------------------------------------------------------------
-    # Step 2-6: Top shifts ranked by absolute magnitude
-    # -----------------------------------------------------------------------
-    if top_display:
-
-        def _print_top(df, delta_col, section_label, era_label):
-            # sort_values(key=abs) ranks by magnitude while preserving sign
-            # reindex is not needed — sort already returns the correct subset
-            print(f"TOP {n_rows} {section_label} - {era_label}")
-            print("=" * 55)
-            top = (
-                df[delta_col]
-                .sort_values(key=abs, ascending=False)
-                .head(n_rows)
-                .round(4)
-            )
-            print(top.to_string())
-            print()
-
-        # Human-readable era labels — underscores in column names
-        # are not suitable for printed output
-        era_labels = {
-            "Pre_minus_COVID" : "Pre-COVID -> COVID",
-            "COVID_minus_Post": "COVID -> Post-COVID",
-            "Pre_minus_Post"  : "Pre-COVID -> Post-COVID",
+        # Store the shrinkage coefficient and condition numbers for both raw and LW covariances.
+        lw_shrinkage[name] = lw.shrinkage_
+        cond_numbers[name] = {
+            'raw': float(np.linalg.cond(raw_cov.values)),
+            'lw' : float(np.linalg.cond(lw.covariance_))
         }
 
-        # Print mean shifts first, then volatility shifts, with clear section 
-        # headers and interpretation notes
-        print("\n" + "=" * 70)
-        print(f"TOP {n_rows} MEAN SHIFTS")
-        print("=" * 70)
-        print("Note: Differences between eras, sorted by absolute magnitude.")
-        print("Pre-COVID -> COVID, COVID -> Post-COVID, "
-              "and Pre-COVID -> Post-COVID are ranked separately.")
-        print("This highlights which crime types had the "
-              "largest distributional shifts.")
-        print(f"{'-' * 70}\n")
-        # Loop through the same pairs to print mean shifts and std dev shifts with appropriate labels
-        for _, _, col in pairs:
-            _print_top(era_means, col, "MEAN SHIFTS", era_labels[col])
-        # Volatility shifts are differences in std dev, so we use era_stds and 
-        # update the section label accordingly
-        print("\n" + "=" * 70)
-        print(f"TOP {n_rows} VOLATILITY SHIFTS")
-        print("=" * 70)
-        print("Note: Differences in std dev between eras, "
-              "sorted by absolute magnitude.")
-        print("Pre-COVID -> COVID, COVID -> Post-COVID, "
-              "and Pre-COVID -> Post-COVID are ranked separately.")
-        print("This highlights which crime types had the "
-              "largest volatility shifts.")
-        print(f"{'-' * 70}\n")
-        # Print volatility shifts using the same loop structure 
-        # but with era_stds and updated section label
-        for _, _, col in pairs:
-            _print_top(era_stds, col, "VOLATILITY SHIFTS", era_labels[col])
+    # -------------------------------------------------------------------------------
+    # 2-0-D: Compute pairwise deltas for means and stds across all era pairs, storing 
+    #      in DataFrames.
+    # ---------------------------------------------------------------------------------
+    pairs = [
+        (era_names[i], era_names[j], f"{era_names[j]}_minus_{era_names[i]}")
+        for i in range(len(era_names)) for j in range(i + 1, len(era_names))
+    ]
+    
+    # Initialize columns for deltas in the means and stds DataFrames.
+    for earlier, later, col in pairs:
+        era_means[col] = era_means[later] - era_means[earlier]
+        era_stds[col]  = era_stds[later]  - era_stds[earlier]
 
-    return {
-        'era_means'   : era_means,
-        'era_stds'    : era_stds,
-        'era_covs'    : era_covs,        # raw - reference only, not used for inference
-        'era_covs_lw' : era_covs_lw,     # LW regularized - all matrix-based inference
-        'lw_shrinkage': lw_shrinkage,    # α per era: 0=none, 1=full shrinkage
-        'cond_numbers': cond_numbers,    # raw and LW condition numbers per era
+    # Package all results into a single dictionary.
+    result = {
+        'era_names': era_names, 'era_means': era_means, 'era_stds': era_stds,
+        'era_covs': era_covs, 'era_covs_lw': era_covs_lw, 'lw_shrinkage': lw_shrinkage,
+        'cond_numbers': cond_numbers, 'pairs': pairs, 'sparse_cats': sparse_cats, 
+        'era_date_ranges': era_date_ranges
     }
 
-
-# -----------------------------------------------------------------------------
-# 3. Function to plot heatmaps of mean CLR per era and shifts
-# -----------------------------------------------------------------------------
-def plot_era_heatmaps(data_dict, stat_type='mean', save_image=None, verbose=False):
-    """
-    Consolidated function to plot either Mean or Volatility heatmaps.
-    stat_type: 'mean' or 'std'
-    """
-    # -----------------------------------------------------------------------
-    # 3-1: Configuration based on stat_type
-    # -----------------------------------------------------------------------
-    is_mean = stat_type == 'mean'
-    df_key = 'era_means' if is_mean else 'era_stds'
-    title_main = 'Mean CLR' if is_mean else 'CLR Volatility'
-    cmap_base = 'RdBu_r' if is_mean else 'YlOrRd'
-    unit_label = 'CLR Mean' if is_mean else 'CLR Std Dev'
-    # -----------------------------------------------------------------------    
-    # 3-2: Data Preparation - Sort by absolute magnitude of Pre-COVID -> COVID shift
-    # -----------------------------------------------------------------------
-    # Reindex based on the absolute magnitude of the Pre-COVID -> COVID shift
-    sort_idx = data_dict[df_key]['Pre_minus_COVID'].abs().sort_values(ascending=False).index
-    df_sorted = data_dict[df_key].reindex(sort_idx)
-    
-    # -----------------------------------------------------------------------
-    #3-3: Plot Configuration - Titles, labels, and color maps based on stat_type
-    # -----------------------------------------------------------------------
-    stat_type = stat_type.upper()
-    plot_configs = [
-        (['Pre-COVID', 'COVID', 'Post-COVID'], f'{title_main} per Era', unit_label, cmap_base),
-        (['Pre_minus_COVID'], f'{stat_type} Shift\nPre -> COVID', 'Δ CLR', 'RdBu_r'),
-        (['COVID_minus_Post'], f'{stat_type} Shift\nCOVID -> Post', 'Δ CLR', 'RdBu_r'),
-        (['Pre_minus_Post'], f'{stat_type} Shift\nPre -> Post', 'Δ CLR', 'RdBu_r')
-    ]
-    # -----------------------------------------------------------------------
-    # 3-4: Plotting - Loop through configurations to create heatmaps with appropriate color maps and annotations
-    # -----------------------------------------------------------------------
-    fig, axes = plt.subplots(1, 4, figsize=(26, 10), gridspec_kw={'width_ratios': [3, 1, 1, 1]})
-    # Loop through each subplot configuration to create heatmaps
-    for ax, (cols, title, label, cmap) in zip(axes, plot_configs):
-        # Use center=0 for shift plots (RdBu_r), but ignore center for raw Volatility (YlOrRd)
-        center_val = 0 if 'minus' in "".join(cols) or is_mean else None
-        # Plot heatmap with annotations, appropriate color map, and centered at 0 for shifts
-        sns.heatmap(
-            df_sorted[cols],
-            ax=ax,
-            cmap=cmap,
-            center=center_val,
-            annot=True,
-            fmt='.2f',
-            linewidths=0.4,
-            cbar_kws={'label': label}
-        )
-        ax.set_title(title, fontsize=13, fontweight='bold')
-        ax.set_xlabel('')
-        ax.set_ylabel('')
-
-    plt.suptitle(
-        f'{title_main} per Era & Shifts - Chicago Crime 2001–2025\nSorted by |Pre_minus_COVID|',
-        fontsize=16, fontweight='bold', y=1.02
-    )
-    
-    plt.tight_layout()
-    # Save the figure if requested
-    if save_image:
-        fname = f"{save_image}clr_{stat_type}_heatmap.png"
-        plt.savefig(fname, dpi=300, bbox_inches='tight')
-    
-    plt.show()
-    # Print sorted DataFrame if verbose
+    # Verbose reporting: Pass the computed parameters into the reporting function 
+    # to print a formatted diagnostic summary.
     if verbose:
-        print(f"\n{title_main} Sorted by |Pre_minus_COVID|:")
-        print(df_sorted.round(3).to_string())
+        # Pass the constants into the reporting suite
+        print_era_distribution_report(result, width=report_width, threshold=precision_threshold)
+
+    return result
+
+
+# --------------------------------------------------------------------------------------
+# 2-1. Function to print a comprehensive report summarizing per‑era distribution parameters,
+#      covariance integrity, stability diagnostics, and top shifts.
+# --------------------------------------------------------------------------------------
+def print_era_distribution_report(result, top_display=True, n_rows=10, use_emoji=True, 
+                                  width=90, threshold=8):
+    """
+    Print a multi‑section diagnostic report summarizing per‑era distribution 
+    characteristics, covariance integrity, stability, and top shifts.
+
+    Parameters
+    ----------
+    result : dict
+        Output dictionary from `compute_era_distribution_parameters()`. 
+        Must contain:
+            - 'era_means' : DataFrame of means + deltas
+            - 'era_stds'  : DataFrame of std devs + deltas
+            - 'era_covs'  : dict of raw covariance matrices
+            - 'pairs'     : list of (earlier, later, label) tuples
+            - 'sparse_cats' : list of excluded categories
+
+    top_display : bool, optional
+        Whether to display the "Top Shifts" sections for means and volatilities.
+
+    n_rows : int, optional
+        Number of top rows to display in the shift tables.
+
+    use_emoji : bool, optional
+        Whether to use emoji glyphs in the report.
+
+    width : int, optional
+        Horizontal width for section separators and formatting.
+
+    threshold : int, optional
+        Precision threshold passed to the stability report function.
+
+    Notes
+    -----
+    - This function is purely for formatted console output.
+    - It delegates to helper functions for banners, stability, and shift tables.
+    - No computations occur here; all statistics must be precomputed.
+    """
+    # Load glyphs (emoji or ASCII) for visual formatting.
+    glyphs = _get_glyphs(use_emoji)
+    
+    # ------------------------------------------------------------------------------
+    # 2-1-A: Distribution Parameters & Pairwise Deltas
+    # -------------------------------------------------------------------------------
+    _display_banner_table("MEAN CLR VECTOR PER ERA", result['era_means'])
+    _display_banner_table("VOLATILITY (STD DEV) PER ERA", result['era_stds'])
+
+    # ------------------------------------------------------------------------------
+    # 2-1-B: Covariance Integrity & Data Quality Check
+    # ------------------------------------------------------------------------------
+    _print_section_header("DATA INTEGRITY & CONSISTENCY CHECK", glyphs['matrix'], width=width)
+    
+    # Determine expected number of categories from the first covariance matrix.
+    n_cats = next(iter(result['era_covs'].values())).shape[0]
+    
+    # Validate that all covariance matrices have consistent dimensions.
+    for name, cov in result['era_covs'].items():
+        # Status is READY if dimensions match across all eras.
+        status = f"{glyphs['ok']} READY" if cov.shape[0] == n_cats else f"{glyphs['fail']} BROKEN"
+        print(f"  {name:<15} | Date Range: {result['era_date_ranges'][name][0]} to {result['era_date_ranges'][name][1]} \
+| Tracking {n_cats} Crime Types | Status: {status}")
+
+        # | Date Range: {result['era_date_ranges'][name][0]} to {result['era_date_ranges'][name][1]}
+
+    # Data Quality Log
+    print(f"\n  {glyphs['shield']} DATA QUALITY LOG:")
+    if result['sparse_cats']:
+        # Inform user which categories were removed due to sparsity.
+        print(f"  {glyphs['warn']} Note: {len(result['sparse_cats'])} categories were excluded:")
+        for cat in result['sparse_cats']:
+            print(f"          - {cat}")
+    else:
+        # All categories retained → full comparability across eras.
+        print(f"  {glyphs['ok']} All crime categories met the minimum support requirements and were retained")
+        print(f"     across the Pre-COVID, COVID, and Post-COVID periods, ensuring fully consistent")
+        print(f"     and directly comparable analyses across all time periods")
+    print("-" * width)
+
+    # ------------------------------------------------------------------------------
+    # 2-1-C: Numerical Stability & Regularization Diagnostics
+    # -------------------------------------------------------------------------------
+    _print_stability_report(result, glyphs, threshold=threshold, width=width)
+
+    # ------------------------------------------------------------------------------
+    # 2-1-D: Top Shifts in Means and Volatilities
+    # -------------------------------------------------------------------------------
+    if top_display:
+        _print_top_shifts(result['era_means'], result['pairs'], "MEAN SHIFTS", 
+                          glyphs['fire'], glyphs, n_rows, width=width)
+        _print_top_shifts(result['era_stds'], result['pairs'], "VOLATILITY SHIFTS", 
+                          glyphs['bolt'], glyphs, n_rows, width=width)
+
+
+# --------------------------------------------------------------------------------------
+# Helper function 2-A: Print a detailed stability report summarizing condition numbers, 
+#                      shrinkage, and health indicators for each era, with interpretive 
+#                      guidance for the metrics shown.
+# --------------------------------------------------------------------------------------
+def _print_stability_report(res, glyphs, threshold, width):
+    """
+    Print a numerical‑stability diagnostic table summarizing raw and 
+    Ledoit‑Wolf‑regularized condition numbers for each era, along with 
+    shrinkage coefficients and qualitative health indicators.
+
+    Parameters
+    ----------
+    res : dict
+        The result dictionary produced by `compute_era_distribution_parameters()`.
+        Must contain:
+            - 'era_names'
+            - 'cond_numbers' : dict of {'raw': float, 'lw': float}
+            - 'lw_shrinkage' : dict of shrinkage α values
+
+    glyphs : dict
+        Dictionary of visual symbols (emoji or ASCII) used for formatting.
+
+    threshold : int
+        Log‑10 threshold used to classify LW condition numbers as OPTIMAL or STRETCHED.
+
+    width : int
+        Horizontal width for formatting separators and section headers.
+
+    Notes
+    -----
+    - Condition numbers measure numerical stability of covariance inversion.
+    - Ledoit‑Wolf shrinkage typically reduces condition numbers substantially.
+    - Health classification is based on log10(LW_cond) < threshold.
+    """
+
+    # Print section header for stability diagnostics.
+    _print_section_header("NUMERICAL STABILITY & REGULARIZATION", glyphs['shield'], width=width)
+
+    # Build and print the table header.
+    header = f"  {'Era':<15} {'Raw Cond#':>15} {'LW Cond#':>15} {'Shrinkage':>20} {'Health':>14}"
+    print(f"{header}\n  {'-' * (width - 4)}")
+
+    # Iterate through eras and print stability metrics.
+    for name in res['era_names']:
+        cn = res['cond_numbers'][name]          # Raw and LW condition numbers
+        alpha = res['lw_shrinkage'][name]       # Ledoit‑Wolf shrinkage coefficient
+
+        # Health classification based on LW condition number magnitude.
+        health = (
+            glyphs['green'] + " OPTIMAL"
+            if np.log10(cn['lw']) < threshold
+            else glyphs['yellow'] + " STRETCHED"
+        )
+
+        # Print formatted row for this era.
+        print(f"  {name:<15} {cn['raw']:>15.1e} {cn['lw']:>15.1f} {alpha:>20.4f} {health:>14}")
+
+    print("-" * width)
+
+    # Describe the implications of the stability metrics for interpretability and reliability of CLR-based analyses.
+    # Provide interpretive guidance for the metrics shown above.
+    print(f"\n  DIAGNOSTIC SUMMARY:")
+    print(f"  {glyphs['bullet']} Raw Cond#  : Values > 1e10 indicate mathematical singularity (rank deficiency).")
+    print(f"  {glyphs['bullet']} LW Cond#   : The stabilized condition number after Ledoit-Wolf shrinkage.")
+    print(f"  {glyphs['bullet']} Shrinkage  : Coefficient 'alpha' used to regularize the matrix (0=none, 1=full).")
+    print(f"  {glyphs['bullet']} Precision  : 64-bit floats provide ~15 digits of base precision.")
+    print(f"                 An LW Cond# of 1e{threshold} loses {threshold} digits, leaving {15-threshold} for inference.")
+    print(f"  {glyphs['bullet']} Status     : OPTIMAL confirms reliable matrix inversion for CLR-based deltas.")
+    # print("-" * width)
+
+# --------------------------------------------------------------------------------------
+# Helper Function 2-B: Print top shifts in means and volatilities for each era pair, 
+#                      with directional arrows and
+# --------------------------------------------------------------------------------------
+def _display_banner_table(title, df):
+    table_str = df.round(4).to_string()
+    width = max(len(title), max(len(l) for l in table_str.splitlines()))
+    print(f"\n{'='*width}\n{title}\n{'='*width}\n{table_str}")
+
+# --------------------------------------------------------------------------------------
+# Helper Function 2-C: Print top shifts in means and volatilities for each era pair,
+# --------------------------------------------------------------------------------------
+def _print_section_header(title, glyph, width):
+    print(f"\n{'=' * width}\n  {glyph} {title}\n{'=' * width}")
+
+# --------------------------------------------------------------------------------------
+# Helper function 2-D: Get glyphs for report formatting, with option for emoji 
+#                      or ASCII fallback
+# ---------------------------------------------------------------------------------------
+def _get_glyphs(use_emoji):
+    if not use_emoji:
+        return {k: f"[{k.upper()}]" for k in ['ok', 'fail', 'warn', 'green', 'yellow', 'matrix', 'shield', 'fire', 'bolt']} | {'bullet': '-', 'up': '+', 'down': '-'}
+    return {'ok': '✅', 'fail': '❌', 'warn': '⚠️', 'green': '🟢', 'yellow': '🟡', 'matrix': '📐', 'shield': '🛡️', 'fire': '🔥', 'bolt': '⚡', 'bullet': '•', 'up': '↑', 'down': '↓'}
+
+# --------------------------------------------------------------------------------------
+# Helper function 2-E: Print top shifts in means and volatilities for each era pair, 
+#                      with directional arrows and formatted tables
+# --------------------------------------------------------------------------------------
+def _print_top_shifts(df, pairs, label, glyph, glyphs, n_rows, width):
+    _print_section_header(f"TOP {label}", glyph, width=width)
+    for earlier, later, col in pairs:
+        print(f"\n  {glyphs['bullet']} {earlier} -> {later} ({col})\n  {'-' * (width - 4)}")
+        top = df[col].sort_values(key=abs, ascending=False).head(n_rows)
+        for crime, val in top.items():
+            arrow = glyphs['up'] if val > 0 else glyphs['down']
+            print(f"    {arrow} {crime:<50} {val:>+10.4f}")
+
 
 # -----------------------------------------------------------------------------
-# 4. Function to run stationarity analysis with harmonized conclusions and multiple testing correction
+# 3. Function to run stationarity analysis with harmonized conclusions and multiple testing correction
 # -----------------------------------------------------------------------------
 def run_stationarity_analysis(clr_df, filled_df, era_boundaries=None, seasonal_cycle=12,
                               sparse_threshold=0.05, verbose=True):
@@ -463,7 +466,7 @@ def run_stationarity_analysis(clr_df, filled_df, era_boundaries=None, seasonal_c
     if era_boundaries is None:
         raise ValueError("era_boundaries dict required (Pre-COVID, COVID, Post-COVID keys).")
     # ------------------------------------------------------------------------
-    # 4-1 Sparsity Assessment - Identify categories with high zero rates in raw crime counts
+    # 3-1 Sparsity Assessment - Identify categories with high zero rates in raw crime counts
     # -------------------------------------------------------------------------
     # Efficiently calculate zero rates for all crime types
     zero_rates = (filled_df.groupby('fbi_code_desc', observed=True)['crime_count']
@@ -471,7 +474,7 @@ def run_stationarity_analysis(clr_df, filled_df, era_boundaries=None, seasonal_c
     sparse_cats = zero_rates[zero_rates > sparse_threshold].index.tolist()
 
     # ------------------------------------------------------------------------
-    # 4-2. Run stationarity tests for each crime type's CLR series with error handling for sparse data
+    # 3-2. Run stationarity tests for each crime type's CLR series with error handling for sparse data
     # -------------------------------------------------------------------------
     # Note: If clr_df.columns is large, consider using joblib or multiprocessing here
     results = [
@@ -489,7 +492,7 @@ def run_stationarity_analysis(clr_df, filled_df, era_boundaries=None, seasonal_c
     stat_df = pd.DataFrame(results).set_index('crime')
 
     # ------------------------------------------------------------------------
-    # 4-3. Multiple Testing Correction - Apply BH-FDR correction to p-values for dense categories 
+    # 3-3. Multiple Testing Correction - Apply BH-FDR correction to p-values for dense categories 
     # only to avoid biasing the FDR with unreliable sparse category results
     # -------------------------------------------------------------------------
     # Only apply correction to 'dense' categories to avoid biasing the FDR
@@ -507,7 +510,7 @@ def run_stationarity_analysis(clr_df, filled_df, era_boundaries=None, seasonal_c
             # Map adjusted p-values back to the correct rows
             stat_df.loc[p_vals.index, adj_col] = p_adj
     # ------------------------------------------------------------------------
-    # 4-4. Harmonization Logic - Evaluate conclusions based on test results with sensitivity f
+    # 3-4. Harmonization Logic - Evaluate conclusions based on test results with sensitivity f
     # lagging for trend-sensitive break points
     # -------------------------------------------------------------------------
     concl_cols = ['adf_kpss', 'za_conclusion', 'agreement']
@@ -515,7 +518,7 @@ def run_stationarity_analysis(clr_df, filled_df, era_boundaries=None, seasonal_c
     stat_df[concl_cols] = pd.DataFrame(conclusions.tolist(), index=stat_df.index)
 
     # ------------------------------------------------------------------------
-    # 4-5. Reporting - Print comprehensive stationarity report with clear formatting and 
+    # 3-5. Reporting - Print comprehensive stationarity report with clear formatting and 
     # interpretation notes
     # ------------------------------------------------------------------------
     if verbose:
@@ -525,7 +528,7 @@ def run_stationarity_analysis(clr_df, filled_df, era_boundaries=None, seasonal_c
     return stat_df 
 
 # -----------------------------------------------------------------------------
-# Helper Function 4-A to run stationarity tests on each crime type's time series
+# Helper Function 3-A to run stationarity tests on each crime type's time series
 # ------------------------------------------------------------------------------
 def _run_single_stationarity_test(col_name, series, is_sparse, 
                                   zero_rate, index, seasonal_cycle):
@@ -594,7 +597,7 @@ def _run_single_stationarity_test(col_name, series, is_sparse,
 
 
 # -----------------------------------------------------------------------------
-# Helper Function 4-B to evaluate conclusions based on test results with harmonization logic
+# Helper Function 3-B to evaluate conclusions based on test results with harmonization logic
 # -----------------------------------------------------------------------------
 def _evaluate_conclusion(row):
     """Logic to harmonize ADF, KPSS, and ZA results with sensitivity flagging."""
@@ -607,7 +610,7 @@ def _evaluate_conclusion(row):
     kpss_rej = row['kpss_p'] < alpha
     za_rej = row['za_p_adj'] < alpha
     # -----------------------------------------------------------------------
-    # 1-B-1: ADF + KPSS Logic (Standard Unit Root Tests)
+    # 3-B-1: ADF + KPSS Logic (Standard Unit Root Tests)
     # ------------------------------------------------------------------------
     if not adf_rej and kpss_rej:
         adf_kpss = 'Non-Stationary'
@@ -618,7 +621,7 @@ def _evaluate_conclusion(row):
     else:
         adf_kpss = 'Inconclusive'
     # -----------------------------------------------------------------------
-    # Helper Function 1-B-2: Zivot-Andrews Logic (Handles Structural Breaks)
+    # Helper Function 3-B-2: Zivot-Andrews Logic (Handles Structural Breaks)
     # If ZA is stationary but ADF is not, the break was the cause of ADF failure.
     # ------------------------------------------------------------------------
     za_conclusion = 'Stationary (ZA)' if za_rej else 'Non-Stationary (ZA)'
@@ -644,98 +647,258 @@ def _evaluate_conclusion(row):
     return adf_kpss, za_conclusion, agreement
 
 # -------------------------------------------------------------------------------
-# Helper Function 4-C to print a comprehensive stationarity report with improved formatting and alignment
+# Helper Function 3-C to print a comprehensive stationarity report with improved formatting and alignment
 # -----------------------------------------------------------------------
 def _print_stationarity_report(df, sparse_cats, zero_rates, era_boundaries, seasonal_cycle, sparse_threshold):
-    """Standardized console output for stationarity analysis with improved alignment."""
-    
-    dense_df = df[~df['is_sparse']]
-    n_total, n_sparse = len(df), len(sparse_cats)
-    # -----------------------------------------------------------------------
-    # 4-C-1: Summary of Sparse vs Dense Categories with clear formatting and interpretation notes
-    # -----------------------------------------------------------------------
-    print("=" * 70)
-    print(f"STATIONARITY ANALYSIS: {n_total:>5} Categories {'|':>5} {n_sparse:>5} Sparse Excluded")
-    print("=" * 70)
-    print(f"Total sparse : {n_sparse:<3} categories\nTotal dense  : {(n_total - n_sparse):<3} categories")
-    print(f"\n    ** Note: Sparse categories reported at {sparse_threshold * 100:.1f}% zero rate\n"
-          f"       (reported but excluded from formal conclusions):")
-    print("-" * 70)
-    for cat in sparse_cats:
-        print(f"  {cat:<50}: {zero_rates[cat]:<5.1%} zeros  ⚠️")
-    print("-" * 70)
+    """
+    Generate a fully formatted, dynamically aligned stationarity diagnostics report.
 
-    # -----------------------------------------------------------------------
-    # 4-C-2: Conclusion Counts with clear section headers and interpretation notes
-    # -----------------------------------------------------------------------
-    sections = [
-        ("CONCLUSION COUNTS - ADF + KPSS", 'adf_kpss'),
-        ("CONCLUSION COUNTS - Zivot-Andrews 'ct'", 'za_conclusion'),
-        ("AGREEMENT - ADF/KPSS vs Zivot-Andrews", 'agreement')
-    ]
-    # Loop through each section to print value counts with clear headers and formatting
-    for title, col in sections:
-        print(f"\n{title}:")
-        print(dense_df[col].value_counts().to_string())
-    # -----------------------------------------------------------------------
-    # 4-C-3: Trend-Sensitive Break Points - Highlight cases where ZA break points differ by
-    #  more than the seasonal cycle, indicating potential sensitivity to break date selection
-    # -----------------------------------------------------------------------
-    print(f"\n" + "=" * 70)
-    print(f"TREND-SENSITIVE (Break divergence > {seasonal_cycle} months)")
-    print("=" * 70)
+    This function prints a multi‑section dashboard summarizing:
+    - Dense vs. sparse categories
+    - Zero‑rate analysis for sparse categories
+    - Detailed stationarity agreement (ADF + KPSS)
+    - Trend‑sensitive categories with structural break metadata
+    - Break‑date alignment relative to pre‑COVID / COVID / post‑COVID eras
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Main stationarity results table. Must include:
+            - 'is_sparse' (bool)
+            - 'agreement' (str)
+            - 'trend_sensitive' (bool)
+            - 'za_date' (str, YYYY-MM)
+            - 'za_date_c' (float or str)
+            - 'bp_diff_months' (int)
+
+    sparse_cats : list
+        Categories classified as sparse (high zero‑rates).
+
+    zero_rates : pd.Series or dict
+        Zero‑rate percentages for each category. Used to highlight sparse series.
+
+    era_boundaries : dict
+        Dictionary with keys:
+            'Pre-COVID' : str (YYYY-MM)
+            'COVID'     : str (YYYY-MM)
+        Used to classify break dates into eras.
+
+    seasonal_cycle : int
+        Seasonal cycle length (e.g., 12 for monthly data). Used in trend‑sensitivity labeling.
+
+    sparse_threshold : float
+        Threshold above which a category is considered sparse (e.g., 0.05 for 5%).
+
+    Notes
+    -----
+    - The function prints directly to stdout.
+    - All column widths are dynamically computed to maintain perfect vertical alignment.
+    - No return value; this is a pure formatting/printing utility.
+    """
+    # Load glyphs for visual formatting
+    GREEN, RED, RESET = "\033[92m", "\033[91m", "\033[0m"
+    BOLD, DIM = "\033[1m", "\033[2m"
+    
+    # ------------------------------------------------------------
+    # 3-C-1: Dynamic Column Width Calculation
+    # Compute the longest category name to determine column widths.
+    # This ensures the vertical alignment spine stays consistent.
+    # ------------------------------------------------------------
+    max_name_len = df.index.str.len().max()
+    W_CAT = max(40, min(55, max_name_len + 5))  # Category column width
+    W_STAT = 35                                 # Status column width
+    
+    # MASTER WIDTH controls all horizontal separators
+    MASTER_WIDTH = W_CAT + W_STAT
+
+    dense_df = df[~df['is_sparse']].sort_index()
+    num_dense = len(dense_df)
+
+    # ------------------------------------------------------------
+    # 3-C-2: Dashboard Title & Summary Metadata
+    # Prints dashboard title, counts, and summary metadata.
+    # ------------------------------------------------------------
+    print(f"\n{'=' * MASTER_WIDTH}")
+    print(f"📊 {BOLD}STATIONARITY DASHBOARD{RESET} Total: {len(df)}")
+    print(f"{'=' * MASTER_WIDTH}")
+    print(f"  Dense  : {num_dense:<3}\n  Sparse : {len(sparse_cats):<3} (@ > {sparse_threshold:.1%})")
+
+    # ------------------------------------------------------------
+    # 3-C-3: Sparse Category Analysis
+    # Only printed if zero-rate data exists.
+    # ------------------------------------------------------------
+    if zero_rates is not None and len(zero_rates) > 0:
+        print(f"\n{'-' * MASTER_WIDTH}")
+
+        # Determine if any category exceeds the sparse threshold
+        has_sparse = (zero_rates > sparse_threshold).any() if isinstance(zero_rates, pd.Series) else any(v > sparse_threshold for v in zero_rates.values())
+
+        if has_sparse:
+            # Sort sparse categories by zero-rate descending
+            sorted_items = zero_rates.sort_values(ascending=False) if isinstance(zero_rates, pd.Series) else zero_rates
+            for cat, rate in sorted_items.items():
+                if cat in sparse_cats or rate > sparse_threshold:
+                    # Truncate long names for formatting
+                    name = (cat[:W_CAT-8] + '...') if len(cat) > (W_CAT-5) else cat
+                    print(f"  ⚠️  {name:<{W_CAT-5}} : {rate:>6.1%} zeros")
+            
+            print(f"{'-' * MASTER_WIDTH}\n")
+
+    # ------------------------------------------------------------
+    # 3-C-4: Detailed Stationarity Agreement
+    # Shows ADF+KPSS agreement for dense categories.
+    # ------------------------------------------------------------
+    print(f"🔍 {BOLD}DETAILED STATIONARITY REPORT (Dense){RESET}")
+    print(f"   {'Category':<{W_CAT-3}}    Status")
+    
+    print(f"{'-' * (W_CAT+1)} {'-' * (W_STAT-2)}")
+
+    for row in dense_df.itertuples():
+        # Choose icon based on stationarity agreement
+        icon = "🔴" if "Non-Stationary" in str(row.agreement) else "🟢"
+        # Truncate long category names
+        name = (row.Index[:W_CAT-6] + '...') if len(row.Index) > (W_CAT-3) else row.Index
+        print(f"  {icon} {name:<{W_CAT-4}} │ {row.agreement}")
+    
+    print(f"{'-' * MASTER_WIDTH}")
+
+    # ------------------------------------------------------------
+    # 3-C-5: Trend-Sensitive Breaks
+    # Shows categories with structural breaks beyond seasonal cycle.
+    # ------------------------------------------------------------
+    W_CT, W_C, W_DIFF = 14, 12, 6
+    print(f"\n📉 {BOLD}TREND-SENSITIVE (Break > {seasonal_cycle}m){RESET}")
+    print(f"{'=' * MASTER_WIDTH}")
+    
     trend_df = dense_df[dense_df['trend_sensitive']]
-    if trend_df.empty:
-        print("  None detected.")
+    if not trend_df.empty:
+        print(f"{BOLD}{'Category':<{W_CAT}} {'Break ct':<{W_CT}} {'Break c':<{W_C}} {'Diff':>{W_DIFF}}{RESET}")
+        print(f"{'-'*W_CAT} {'-'*W_CT} {'-'*W_C} {'-'*W_DIFF}")
+        for row in trend_df.itertuples():
+            name = (row.Index[:W_CAT-3] + '...') if len(row.Index) > W_CAT else row.Index
+            print(f"{name:<{W_CAT}} {row.za_date:<{W_CT}} {row.za_date_c:<{W_C}} {int(row.bp_diff_months):>{W_DIFF-1}}m")
     else:
-        # Use a more descriptive renaming for the report
-        report = trend_df[['za_date', 'za_date_c', 'bp_diff_months']].rename(columns={
-            'za_date': "Break 'ct'", 'za_date_c': "Break 'c'", 'bp_diff_months': 'Diff'
-        })
-        print(report.to_string())
-    # -----------------------------------------------------------------------
-    # 4-C-4: Highlight cases where ADF/KPSS and ZA conclusions diverge, with clear 
-    # formatting and alignment for readability
-    # -----------------------------------------------------------------------
-    dis_df = dense_df[dense_df['agreement'] == 'Disagree']
-    if not dis_df.empty:
-        print(f"\n" + "=" * 70 + "\nDISAGREEMENT DETAIL\n" + "=" * 70)
-        for crime, row in dis_df.iterrows():
-            print(f"\n  {crime}")
-            print(f"    {'ADF + KPSS':<12}: {row['adf_kpss']}")
-            print(f"    {'ZA (ct)':<12}: {row['za_conclusion']:<15} break = {row['za_date']:<10} p_adj = {row['za_p_adj']:>8.4f}")
-            print(f"    {'ZA (c)':<12}: {'':<15} break = {row['za_date_c']:<10} p_c   = {row['za_p_c']:>8.4f}")
-            print(f"    {'Note':<12}: zero_rate = {row['zero_rate']:.4f} (Quasi-sparse)")
-    # -----------------------------------------------------------------------
-    # 1-C-5: Break Date Alignment - Assess how many categories have ZA break points that align with the defined 
-    # COVID era boundaries, with clear formatting and interpretation notes
-    # -----------------------------------------------------------------------
-    print(f"\n" + "=" * 70 + "\nBREAK DATE ALIGNMENT (Primary 'ct' Model)\n" + "=" * 70)
-    
-    # Define COVID era boundaries based on provided era_boundaries dict
-    c_start = pd.Timestamp(era_boundaries['Pre-COVID']) + pd.DateOffset(months=1)
-    c_end   = pd.Timestamp(era_boundaries['COVID'])
-    
-    # Helper function to classify break dates into Pre-COVID, COVID-aligned, or Post-COVID based on era boundaries
-    def get_era_label(d_str):
-        dt = pd.Timestamp(d_str + '-01')
-        if dt < c_start: return 'Pre-COVID'
-        if dt <= c_end:  return 'COVID-aligned'
-        return 'Post-COVID'
+        print(f" ✅ {GREEN}None detected.{RESET}")
+    print(f"{'=' * MASTER_WIDTH}")
 
-    # Calculate the distribution of break date alignments and print the counts with clear labels and formatting
-    alignment = dense_df['za_date'].apply(get_era_label).value_counts()
+    # ------------------------------------------------------------
+    # 3-C-6: Break Date Alignment
+    # Classifies break dates into Pre-COVID, COVID-aligned, Post-COVID.
+    # ------------------------------------------------------------
+    if num_dense > 0:
+        print(f"\n📅 {BOLD}BREAK DATE ALIGNMENT (N={num_dense}){RESET}")
+        start, end = pd.Timestamp(era_boundaries['Pre-COVID']), pd.Timestamp(era_boundaries['COVID'])
+        dates = pd.to_datetime(dense_df['za_date'] + '-01')
+        
+        # Default label: Post-COVID
+        labels = pd.Series('Post-COVID', index=dense_df.index)
+        labels[dates <= start] = 'Pre-COVID'
+        labels[(dates > start) & (dates <= end)] = 'COVID-Aligned'
+        
+        counts = labels.value_counts()
+        for label in ["COVID-Aligned", "Pre-COVID", "Post-COVID"]:
+            c = counts.get(label, 0)
+            pct = (c / num_dense) * 100
+            # Visual bar scaled to 25 characters
+            print(f"  {label:<15} │ {GREEN}{'█' * int(pct / 4):<25}{RESET} {c:>3} ({pct:>4.1f}%)")
+
+# -----------------------------------------------------------------------------
+# Helper Function 3-D-1: 
+# -----------------------------------------------------------------------------
+def _print_bootstrap_report(df, title, n1_info, n2_info, block_size, n_bootstrap):
+    """
+    Print a formatted bootstrap inference report with dynamic column widths.
+
+    This function displays:
+    - A header summarizing bootstrap settings (block size, iterations, group sizes)
+    - A table of effect-size and significance metrics for each category
+    - Sparse-category handling (no FDR adjustment)
+    - FDR-adjusted p-values and significance flags for dense categories
+    - A final summary count of significant mean shifts
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Bootstrap results table. Expected columns include:
+            - delta_mean : float
+            - hedges_g_clr : float
+            - p_bootstrap : float
+            - p_adj : float (optional, dense only)
+            - is_sparse : bool
+            - mean_sig : bool (optional)
+
+    title : str
+        Title describing the comparison (e.g., "Group A vs Group B").
+
+    n1_info : tuple
+        Information about group 1 (e.g., (n_samples, label)).
+
+    n2_info : tuple
+        Information about group 2 (e.g., (n_samples, label)).
+
+    block_size : int
+        Block size used in block bootstrap resampling.
+
+    n_bootstrap : int
+        Number of bootstrap iterations performed.
+
+    Notes
+    -----
+    - This function prints directly to stdout.
+    - No values are returned.
+    - Column widths are fixed for readability.
+    """
+    # Load glyphs for visual formatting
+    GREEN, RESET = "\033[92m", "\033[0m"
+    BOLD, DIM = "\033[1m", "\033[2m"
     
-    # Interpretation note for break date alignment
-    bounds_info = [
-        (f"COVID-aligned ({c_start.strftime('%Y-%m')} to {c_end.strftime('%Y-%m')})", 'COVID-aligned'),
-        (f"Pre-COVID (before {c_start.strftime('%Y-%m')})", 'Pre-COVID'),
-        (f"Post-COVID (after {c_end.strftime('%Y-%m')})", 'Post-COVID')
-    ]
-    # Print the break date alignment results with clear formatting and interpretation notes
-    for label, key in bounds_info:
-        count = alignment.get(key, 0)
-        print(f"  {label:<40} : {count:>3} of {len(dense_df)}")
+    # Fixed line width for consistent formatting across all rows
+    W_LINE = 100
+
+    # ---------------------------
+    # 3-D-1-A: Header Section
+    # ---------------------------
+    print(f"\n{'=' * W_LINE}")
+    print(f"🧬 {BOLD}BOOTSTRAP INFERENCE:{RESET} {title}")
+    # Display block size, iterations, and group sizes
+    print(f"{DIM}📦 Blocks:{RESET} {block_size} | {DIM}🔄 Iters:{RESET} {n_bootstrap:,} | {DIM}👥 Groups:{RESET} {n1_info[0]} vs {n2_info[0]}")
+    print(f"{'=' * W_LINE}")
+
+    # ---------------------------
+    # 3-D-1-B: Table Header
+    # ---------------------------
+    print(f"\n{BOLD}{'CATEGORY':<35} {'Δ MEAN':>10} {'HEDGES G':>12} {'P-VAL':>10} {'FDR ADJ':>10}   {'STATUS'}{RESET}")
+    print("-" * W_LINE)
+
+    # -----------------------------------------------
+    # 3-D-1-C: Table Rows with Conditional Formatting
+    # ------------------------------------------------
+    for row in df.itertuples():
+        # Truncate long category names for clean formatting
+        name = (row.Index[:32] + "...") if len(row.Index) > 33 else row.Index
+        
+        # Handle sparse categories separately (no FDR adjustment)
+        if getattr(row, 'is_sparse', False):
+            print(f"{DIM}{name:<35} {row.delta_mean:>10.4f} {row.hedges_g_clr:>12.4f} "
+                  f"{row.p_bootstrap:>10.4f} {'--':>10}   📌 SPARSE{RESET}")
+        else:
+            # Dense categories: include FDR-adjusted p-values
+            p_adj = getattr(row, 'p_adj', 1.0)
+            p_color = GREEN if p_adj < 0.05 else ""
+            # Significance flag
+            status = f"✨ {GREEN}Significant{RESET}" if getattr(row, 'mean_sig', False) else f"{DIM}Not Significant{RESET}"
+            
+            # Print the row with conditional coloring for significant results
+            print(f"{name:<35} {row.delta_mean:>10.4f} {row.hedges_g_clr:>12.4f} "
+                  f"{row.p_bootstrap:>10.4f} {p_color}{p_adj:>10.4f}{RESET}   {status}")
+
+    # ---------------------------
+    # 3-D-1-D: Summary Footer
+    # ---------------------------
+    sig_count = df['mean_sig'].sum() if 'mean_sig' in df.columns else 0
+    print("-" * W_LINE)
+    print(f"{BOLD}✅ RESULT:{RESET} {sig_count} shifts detected.\n")
+
 
 # -----------------------------------------------------------------------------
 # Helper Function 4-D: Hedges' g effect size calculation with small sample correction
@@ -799,46 +962,7 @@ def _block_bootstrap_logic(x1, x2, block_size, n_bootstrap, seed):
     
     return observed_diff, p_val
 
-# -----------------------------------------------------------------------------
-# Helper Function 4-F: Standardized console output for block bootstrap results with clear formatting and interpretation notes
-# -----------------------------------------------------------------------------
-def _print_bootstrap_report(df, title, n1_info, n2_info, block_size, n_bootstrap):
-    """Internal: Standardized console output formatter."""
-    print(f"\n{'='*105}")
-    print(f"BLOCK BOOTSTRAP REPORT: {title}")
-    print(f"Settings: Block Size={block_size} | Iterations={n_bootstrap:,} | Effect=Hedges' g | Correction=BH-FDR")
-    print(f"Samples:  {n1_info[0]} (n={n1_info[1]}) vs {n2_info[0]} (n={n2_info[1]})")
-    print(f"{'='*105}")
 
-    # Interpretation note for sign convention
-    print(
-        f"Sign note: hedges_g = mean(era2) - mean(era1). "
-        f"hedges_g_clr = -hedges_g, matching CLR table convention."
-    ) 
-    
-    # Separate dense and sparse categories for reporting, with clear section headers and formatting
-    dense_df  = df[~df['is_sparse']]
-    sparse_df = df[ df['is_sparse']]
-    # Columns to display for dense and sparse categories, with clear labels
-    cols = ['delta_mean', 'hedges_g', 'hedges_g_clr', 'p_bootstrap', 'p_adj', 'mean_sig'] 
-
-    print("\nCONFIRMED CATEGORIES (dense ✅)")
-    print(dense_df[cols].round(4).to_string())
-
-    # Interpretation note for sparse categories
-    if not sparse_df.empty:
-        print("\nFLAGGED CATEGORIES (sparse ⚠️ - excluded from FDR correction)")
-        sparse_cols = ['delta_mean', 'hedges_g', 'hedges_g_clr', 'p_bootstrap']  
-        print(sparse_df[sparse_cols].round(4).to_string())
-
-    # Summary of significant shifts among dense categories and count of sparse categories, 
-    # with clear formatting and interpretation notes
-    sig_count = dense_df['mean_sig'].sum()
-    print(
-        f"\nSummary: {sig_count} of {len(dense_df)} confirmed categories "
-        f"showed significant shifts (alpha=0.05). "
-        f"{len(sparse_df)} sparse categories excluded from inference."
-    )
 
 # ----------------------------------------------------------------------------
 # 5. Main Function to Run Era Comparison with Block Bootstrap and Multiple Testing Correction
@@ -1298,11 +1422,7 @@ def _prepare_cov_matrices(eras_stat, clr_era):
         cols    : list of crime type column names
     """
     # Map era labels to keys in the input dictionaries
-    era_map = {
-        'Pre-COVID' : 'pre_covid',
-        'COVID'     : 'covid',
-        'Post-COVID': 'post_covid',
-    }
+    era_map = cfg.era_map
 
     # Extract matrices and validate shapes
     matrices = {}
@@ -2518,11 +2638,7 @@ def run_pca_analysis(clr_era, chosen_clr, sparse_cats,
     joint_matrix = chosen_clr[dense_cols]
 
     # Map human-readable era labels to clr_era dict keys
-    era_map = {
-        'Pre-COVID'  : 'pre_covid',
-        'COVID'      : 'covid',
-        'Post-COVID' : 'post_covid',
-    }
+    era_map = cfg.era_map
 
     # Build era-specific dense matrices and row-to-era label mapping
     era_matrices = {}

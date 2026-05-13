@@ -2,51 +2,24 @@ import warnings
 import numpy as np
 import pandas as pd
 from typing import Sequence, Dict, Any, Iterable
-import clr_utilities as cfg
+import clr_config as cfg
 import matplotlib.pyplot as plt
 from scipy.stats import spearmanr, kendalltau
 
-
-# ----------------------------------------------------------------------------
-# EPS Grid Configuration for clr_eps_grid_search.py
-# ----------------------------------------------------------------------------
-"""
-n_per_decade: int
-    Number of grid points per decade (logarithmic spacing).
-include_fixed: tuple of float
-    A set of fixed epsilon values to always include in the grid.
-min_multiplier_candidates: tuple of float
-    Candidate multipliers for determining the lower bound of the grid based on data.
-q_low: float
-    Quantile used to determine the lower bound of the grid from the data distribution.
-floor: float
-    Minimum value for any epsilon in the grid to prevent numerical issues.
-min_step: float
-    Minimum relative step size between consecutive grid points to ensure a well-spaced grid.
-"""
-config = {
-    "_N_PER_DECADE": 6,
-    "_INCLUDE_FIXED": (1e-5, 1e-4, 1e-3, 0.01, 0.02, 0.03, 0.04, 0.05, 0.07, 0.1, 0.5, 1.0),
-    "_MIN_MULTIPLIER_CANDIDATES": (0.1, 0.25, 0.5, 1.0),
-    "_Q_LOW": 0.05,
-    "_FLOOR": 1e-12,
-    "_MIN_STEP": 0.20,
-    }
-
 # ----------------------------------------------------------------------------
 # Confgiguration parameters for clr_eps_grid_search.py
 # ----------------------------------------------------------------------------
 # Confgiguration parameters for clr_eps_grid_search.py
-_N_PER_DECADE_N_PER_DECADE  = config["_N_PER_DECADE"]
-_INCLUDE_FIXED              = config["_INCLUDE_FIXED"]
-_MIN_MULTIPLIER_CANDIDATES  = config["_MIN_MULTIPLIER_CANDIDATES"]
-_Q_LOW                      = config["_Q_LOW"]
-_FLOOR                      = config["_FLOOR"]
-_MIN_STEP                   = config["_MIN_STEP"]
+_N_PER_DECADE_N_PER_DECADE  = cfg.config_grid["_N_PER_DECADE"]
+_INCLUDE_FIXED              = cfg.config_grid["_INCLUDE_FIXED"]
+_MIN_MULTIPLIER_CANDIDATES  = cfg.config_grid["_MIN_MULTIPLIER_CANDIDATES"]
+_Q_LOW                      = cfg.config_grid["_Q_LOW"]
+_FLOOR                      = cfg.config_grid["_FLOOR"]
+_MIN_STEP                   = cfg.config_grid["_MIN_STEP"]
 # Pivot table keys from detection_config.py
-_DATE_KEY                   = cfg.config["_DATE_KEY"]
-_GROUP_KEY                  = cfg.config["_GROUP_KEY"]
-_COUNTER_KEY                = cfg.config["_COUNTER_KEY"]
+_DATE_KEY                   = cfg.config_agg["_DATE_KEY"]
+_GROUP_KEY                  = cfg.config_agg["_GROUP_KEY"]
+_COUNTER_KEY                = cfg.config_agg["_COUNTER_KEY"]
 
 # ---------------------------------------------------------------------------
 # Helper function 1-A: Pviot Table for building the eps grid
@@ -56,7 +29,7 @@ def _pivot(data_df: pd.DataFrame, index: str = _DATE_KEY,
            values: str = _COUNTER_KEY) -> pd.DataFrame:
 
     # -------------------------------------------------
-    # Pivot long-format data into a T×K matrix
+    # Pivot long-format data into a TXK matrix
     # Converts (date, group, value) rows into a wide
     # matrix required for CLR transformation.
 
@@ -79,7 +52,7 @@ def _pivot(data_df: pd.DataFrame, index: str = _DATE_KEY,
 # ---------------------------------------------------------------------------
 def _extract_positive(pivot: pd.DataFrame) -> np.ndarray:
     """
-    Extract strictly positive values from a pivoted T×K matrix.
+    Extract strictly positive values from a pivoted TXK matrix.
 
     This helper isolates all values greater than zero from the wide
     pivot matrix. It is used to ensure log‑safety prior to CLR or
@@ -88,7 +61,7 @@ def _extract_positive(pivot: pd.DataFrame) -> np.ndarray:
     Parameters
     ----------
     pivot : pd.DataFrame
-        Wide T×K matrix produced by the pivot step. Must contain only
+        Wide TXK matrix produced by the pivot step. Must contain only
         numeric values.
 
     Returns
@@ -100,7 +73,7 @@ def _extract_positive(pivot: pd.DataFrame) -> np.ndarray:
     # -------------------------------------------------
     # Extract strictly positive values
     # CLR/log transforms require values > 0.
-    # This flattens the T×K matrix and filters out
+    # This flattens the TXK matrix and filters out
     # zeros and negatives to guarantee log‑safety.
     # -------------------------------------------------
     vals = pivot.values
@@ -542,7 +515,7 @@ def build_eps_grid(
     bounds and enforcing minimum spacing.
 
     The construction pipeline consists of:
-      A. Pivoting the long-format data into a T×K matrix
+      A. Pivoting the long-format data into a TXK matrix
       B. Validating fixed values and extracting strictly positive entries
       C. Generating data-driven anchors from the positive distribution
       D. Assembling anchors, fixed points, and log-grid candidates
@@ -576,11 +549,11 @@ def build_eps_grid(
     Dict
         {
             'eps_values': np.ndarray — final thinned epsilon grid,
-            'pivot_data': pd.DataFrame — T×K pivoted data matrix
+            'pivot_data': pd.DataFrame — TXK pivoted data matrix
         }
     """
     # -------------------------------------------------
-    # A - Pivot long-format data into a T×K matrix
+    # A - Pivot long-format data into a TXK matrix
     #     Required for extracting positive values and
     #     computing distribution-aware anchors.
     # -------------------------------------------------
@@ -804,7 +777,7 @@ def _compute_rank_diagnostics(clr: pd.DataFrame, prev_clr: pd.DataFrame | None) 
     Parameters
     ----------
     clr : pd.DataFrame
-        Current CLR‑transformed T×K matrix.
+        Current CLR‑transformed TXK matrix.
 
     prev_clr : pd.DataFrame or None
         CLR matrix from the previous epsilon value. If None, stability
@@ -873,7 +846,7 @@ def _plot_diagnostics(
     chosen_eps: float | None = None
 ) -> plt.Figure:
     """
-    Render a 2×3 diagnostic panel summarizing the ε‑sweep.
+    Render a 2X3 diagnostic panel summarizing the ε‑sweep.
 
     Produces six coordinated diagnostic plots that visualize how CLR
     behavior, sparsity effects, and rank‑stability metrics evolve across
@@ -905,7 +878,7 @@ def _plot_diagnostics(
     Returns
     -------
     matplotlib.figure.Figure
-        Figure containing the 2×3 diagnostic layout.
+        Figure containing the 2X3 diagnostic layout.
     """
 
     # -------------------------------------------------
@@ -916,7 +889,7 @@ def _plot_diagnostics(
     nz = int(data_df["n_zero_cells_pre_smooth"].iloc[0])
 
     # -------------------------------------------------
-    # B — Create 2×3 subplot layout and define panel specs
+    # B — Create 2X3 subplot layout and define panel specs
     # -------------------------------------------------
     fig, axes = plt.subplots(2, 3, figsize=(15, 8))
     panels = [
@@ -986,7 +959,7 @@ def _plot_diagnostics(
     # E — Final layout adjustments and return figure
     # -------------------------------------------------
     fig.suptitle(
-        f"ε‑Sweep Diagnostics\nData: {T} intervals × {K} types | "
+        f"ε‑Sweep Diagnostics\nData: {T} intervals X {K} types | "
         f"Pre-smooth Zeros: {nz}",
         fontsize=14,
         fontweight="bold",

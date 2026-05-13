@@ -132,7 +132,7 @@ def make_crime_year_crosstab(data: pd.DataFrame, colA: str, rowB: str):
     # index becomes the rows of the pivot table
     # columns becomes the columns  
     # values fill the cells of the matrix
-    # index × columns crosstab
+    # index X columns crosstab
     pivot = (
         crime
             .pivot(index=rowB, columns=colA, values='count')

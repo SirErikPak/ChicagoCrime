@@ -36,7 +36,7 @@ def fancy_pca_plot_bundle(results, era_config, image_path=None, point_size=90, f
     ----------
     results : dict
         PCA output bundle containing:
-            'coordinates_normalized' : ndarray (n_samples × 2)
+            'coordinates_normalized' : ndarray (n_samples X 2)
                 Normalized PC1–PC2 coordinates.
             'observation_index' : array-like
                 Timestamps for each observation.
@@ -246,7 +246,7 @@ def fancy_pca_plot(
         Whether to overlay a KDE density estimate behind the scatter.
     """
 
-    # Compute and sort PCA loadings (features × PCs) for interpretation.
+    # Compute and sort PCA loadings (features X PCs) for interpretation.
     # The DataFrame is constructed from the PCA components and indexed by
     # original feature names so downstream code can inspect which features
     # drive PC1.

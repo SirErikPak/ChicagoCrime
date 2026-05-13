@@ -54,7 +54,7 @@ def zscore_anomaly(
     # edge case (e.g., all zeros, all identical values)
     counts['z_score'] = counts['z_score'].replace([np.inf, -np.inf], 0).fillna(0)
 
-    # Pivot into a category × time matrix
+    # Pivot into a category X time matrix
     z_matrix = (
         counts.pivot(index=category_col, columns=time_col, values='z_score')
               .fillna(fill_value)

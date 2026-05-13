@@ -37,7 +37,7 @@ def fancy_pca_plot_bundle(results: Mapping[float, pd.DataFrame],
     ----------
     results : dict
         PCA output bundle containing:
-            'coordinates_normalized' : ndarray (n_samples × 2)
+            'coordinates_normalized' : ndarray (n_samples X 2)
                 Normalized PC1–PC2 coordinates.
             'observation_index' : array-like
                 Timestamps for each observation.
@@ -243,7 +243,7 @@ def plot_three_pc_loadings(
     Parameters
     ----------
     clr_data : pd.DataFrame
-        CLR-transformed feature table (samples × features).
+        CLR-transformed feature table (samples X features).
     chosen_eps : float
         Epsilon value used for annotation and manifest printing.
     exclude_features : list, optional
@@ -395,7 +395,7 @@ def plot_three_pc_loadings(
     plt.subplots_adjust(left=0.45, wspace=0.15, top=0.85, bottom=0.1)
 
     plt.suptitle(
-        f"Principal Component Loadings (PC1–PC3) | ε = {chosen_eps:.2g}\n"
+        f"Principal Component Loadings (PC1-PC3) | ε = {chosen_eps:.2g}\n"
         f"Cumulative Variance: {ratios.sum():.1%}",
         fontweight="bold", size=18, y=0.98
     )
@@ -418,6 +418,36 @@ def plot_three_pc_loadings(
         "observation_index": observation_index,
         "excluded": excluded_found
     }
+
+
+
+def print_pca_manifest(working_data, chosen_eps, excluded_found, use_emoji=True):
+    """Print PCA data manifest. Keep all formatting decisions in one place."""
+    width = 60
+    lbl_w, val_w = 28, 18
+    
+    if use_emoji:
+        chart, ok, no = '📊', '[+]', '[-]'
+    else:
+        chart, ok, no = '[*]', '[+]', '[-]'
+    
+    header = f"{chart} PCA DATA MANIFEST (ε = {chosen_eps:.0e})"
+    
+    print("\n" + "=" * width)
+    print(header.center(width))
+    print("-" * width)
+    print(f"{ok} {'Observations':<{lbl_w}}: {working_data.shape[0]:>{val_w}}")
+    print(f"{ok} {'Included Features':<{lbl_w}}: {working_data.shape[1]:>{val_w}}")
+    
+    n_excluded = len(excluded_found) if excluded_found else 0
+    print(f"{no} {'Excluded':<{lbl_w}}: {n_excluded:>{val_w}}")
+    for item in (excluded_found or []):
+        print(f"      - {item}")
+    
+    print("=" * width + "\n")
+
+
+
 
 # ---------------------------------------------------------------------------
 # 2. PCA stability comparison across epsilon values
@@ -449,7 +479,7 @@ def compare_pca_stability(
     Parameters
     ----------
     results : dict
-        Mapping eps → PCA result bundles containing singular values,
+        Mapping eps -> PCA result bundles containing singular values,
         loadings, and sample coordinates.
 
     eps1, eps2 : float
@@ -545,19 +575,19 @@ def compare_pca_stability(
     # 2-D: Print a formatted summary of stability metrics and optionally render a diagnostic dashboard
     # -------------------------------------------------
     width, lbl_w, val_w = 65, 37, 12
-    print("\n" + "═" * width)
+    print("\n" + "=" * width)
     print(f"{'🔍 PCA STABILITY CROSS-CHECK':^{width}}")
     print(f"{f'(ε={eps1} vs ε={eps2})':^{width}}")
     print(f"{f'Number of Principal Components: {n_components}':^{width}}")
-    print("─" * width)
+    print("-" * width)
     print(f"⚖️  {'SV Magnitude Shift (L2)':<{lbl_w}} : {sv_diff_norm:>{val_w}.4f}")
     print(f"📐  {'Max Subspace Angle':<{lbl_w}} : {f'{angles_deg.max():.2f}°':>{val_w}}")
     print(f"💎  {'Composite Health Score':<{lbl_w}} : {composite_score:>{val_w}.4f}")
-    print("─" * width)
+    print("-" * width)
     for i in range(n_components):
         status = "✅" if cosines[i] >= drift_threshold else "⚠️"
         print(f"PC{i+1} Robustness (Cosine Similarity) {status:<5} : {cosines[i]:>{val_w}.4f}")
-    print("═" * width + "\n")
+    print("=" * width + "\n")
 
     # -------------------------------------------------
     # 2-E: If show_plot is True, render a 3-panel diagnostic dashboard visualizing 
@@ -711,7 +741,7 @@ def compare_pca_stability(
 # ---------------------------------------------------------------------------
 # 3. PCA sensitivity visualization across multiple epsilon values
 # ---------------------------------------------------------------------------
-def plot_pca_results(
+def pca_sensitivity_plot(
     results: Dict,
     title: str = "PCA Noise Sensitivity Analysis",
     threshold_var: float = 0.80,
@@ -722,37 +752,38 @@ def plot_pca_results(
     """
     Visualize PCA sensitivity across multiple epsilon values.
 
-    Produces a two-panel diagnostic figure comparing:
-      • The singular value spectrum across eps values
-      • The cumulative variance explained across eps values
+    This function produces a two‑panel diagnostic figure comparing:
+      • Singular value spectra across epsilon values
+      • Cumulative variance explained across epsilon values
 
-    The function automatically determines the target number of components
-    either by:
-      (A) user-specified k_components, or
-      (B) the smallest k such that cumulative variance ≥ threshold_var.
+    Component selection:
+      • If `k_components` is provided, it is used directly.
+      • Otherwise, the smallest k satisfying cumulative variance ≥ `threshold_var`
+        (default 0.80) is selected.
 
-    The selected k is highlighted on both panels with vertical and
-    horizontal reference lines. Tick labels corresponding to the selected
-    component are emphasized for readability.
+    The chosen k is highlighted on both panels with vertical and horizontal
+    reference lines, and the corresponding tick labels are emphasized.
 
     Parameters
     ----------
     results : dict
-        Mapping eps → PCA result bundles containing singular values and
-        variance ratios.
+        Mapping: epsilon → {"singular_values": array, "variance_ratio": array}
 
     title : str, default "PCA Noise Sensitivity Analysis"
         Main title for the figure.
 
     threshold_var : float, default 0.80
-        Minimum cumulative variance required to determine k if
-        k_components is not provided.
+        Minimum cumulative variance required to determine k when
+        `k_components` is not provided.
 
     k_components : int, optional
-        Explicit number of components to highlight. Overrides threshold_var.
+        Explicit number of components to highlight.
 
-    save_path : str, optional
-        Optional path to save the figure.
+    image_path : str, optional
+        Directory where the figure should be saved.
+
+    image_save : str, optional
+        Filename for saving the figure.
 
     Returns
     -------
@@ -760,72 +791,47 @@ def plot_pca_results(
         Displays the figure and optionally saves it.
     """
     # -------------------------------------------------
-    # 3-A: Setup and extract baseline PCA info
+    # Step 3-1: Set up the figure
     # -------------------------------------------------
     sns.set_theme(style="white")
     plt.rcParams["font.family"] = "sans-serif"
     fig, axes = plt.subplots(1, 2, figsize=(14, 7.5))
 
-    # Note: The function begins by setting up a clean and modern visual 
-    # style using Seaborn's white theme and a sans-serif font. It then 
-    # extracts the singular values and variance ratios for the first epsilon 
-    # value in the results, which serves as the baseline for determining the 
-    # target number of components (k). The color palette is defined to ensure 
-    # that each epsilon value is visually distinct in the subsequent plots, 
-    # enhancing readability and interpretability of the PCA sensitivity 
-    # analysis across different noise thresholds.  
     epsilons = sorted(results.keys())
     palette = ["#2d3436", "#d85a30"]
 
-    # Extract singular values and variance ratios for the
+    # Baseline epsilon for determining k
     first_eps = epsilons[0]
     s_vals_first = results[first_eps]["singular_values"]
     v_ratios_first = results[first_eps]["variance_ratio"]
     cum_var_first = np.cumsum(v_ratios_first)
 
     # -------------------------------------------------
-    # 3-B: Determine target number of components (k)
+    # Step 3-2: Determine target number of components
     # -------------------------------------------------
     if k_components is not None:
         target_k = int(k_components)
-    elif threshold_var is not None:
-        target_k = int(np.argmax(cum_var_first >= threshold_var) + 1)
     else:
-        target_k = 3
-    # Note: The target number of components (k) is determined based on either a 
-    # user-specified value or a variance threshold. If k_components is provided, 
-    # it is used directly. Otherwise, the function computes the cumulative variance 
-    # explained by the components and selects the smallest k such that the cumulative 
-    # variance meets or exceeds the specified threshold (default 80%). This dynamic 
-    # selection ensures that the visualization focuses on the most relevant components 
-    # for interpreting PCA sensitivity across epsilon values. 
+        target_k = int(np.argmax(cum_var_first >= threshold_var) + 1)
+
     var_at_k = cum_var_first[target_k - 1]
     k_singular_val = s_vals_first[target_k - 1]
 
     # -------------------------------------------------
-    # 3-C: Global titles and subtitles
+    # Step 3-3: Title and subtitle with variance captured at target k
     # -------------------------------------------------
     subtitle = f"Variance Captured at k={target_k}: {var_at_k:.2f} ({var_at_k:.1%})"
-    fig.suptitle(title, fontsize=18, fontweight="bold", x=0.5, ha="center", y=0.97)
+    fig.suptitle(title, fontsize=18, fontweight="bold", y=0.97)
     fig.text(0.5, 0.92, subtitle, fontsize=12, color="#636e72", ha="center")
 
     # -------------------------------------------------
-    # 3-D: Plot singular values and cumulative variance
+    # Step 3-4: Plot singular values + cumulative variance
     # -------------------------------------------------
-    # The function iterates over each epsilon value in the results, plotting the singular 
-    # value spectrum and cumulative variance explained for each. The singular values 
-    # are plotted as a line with markers to show how the variance structure changes across 
-    # components, while the cumulative variance plot illustrates how much total variance is 
-    # captured as more components are included. Each epsilon value is represented with a distinct 
-    # color from the defined palette, and legends are added to differentiate between them. 
-    # This dual-panel visualization allows for a comprehensive comparison of PCA sensitivity across 
-    # different noise thresholds, highlighting how the choice of epsilon affects the variance structure
-    # and the interpretability of the principal components.  
     for i, eps in enumerate(epsilons):
         s_vals = results[eps]["singular_values"]
         ratios = results[eps]["variance_ratio"]
 
-        # Singular value spectrum
+        # Singular values
         sns.lineplot(
             x=range(1, len(s_vals) + 1),
             y=s_vals,
@@ -835,7 +841,7 @@ def plot_pca_results(
             ax=axes[0]
         )
 
-        # Cumulative variance explained
+        # Cumulative variance
         sns.lineplot(
             x=range(1, len(ratios) + 1),
             y=np.cumsum(ratios),
@@ -846,42 +852,32 @@ def plot_pca_results(
         )
 
     # -------------------------------------------------
-    # 3-E: Formatting, tick logic, and highlighting k
+    # Step 3-5: Highlighting + formatting
     # -------------------------------------------------
     two_dec_formatter = FuncFormatter(lambda x, pos: f"{x:.2f}")
-    # Note: Both panels include a vertical reference line at the target 
-    # number of components (k) and a horizontal reference line at the corresponding 
-    # singular value (for the left panel) or cumulative variance (for the right panel). 
-    # The tick labels corresponding to k are bolded and color-highlighted to draw attention 
-    # to the selected component, which is critical for interpreting the stability analysis. 
-    # The formatting ensures that the key insights about PCA sensitivity are immediately visible 
-    # and accessible to the viewer.
+    
+    # Iterates over both subplots to add vertical reference lines 
     for i, ax in enumerate(axes):
-        ax.set_xlabel("Component Index" if i == 0 else "Number of Components", fontweight="medium")
-        ax.set_ylabel("Singular Value" if i == 0 else "Cumulative Variance", fontweight="medium")
+        ax.set_xlabel("Component Index" if i == 0 else "Number of Components")
+        ax.set_ylabel("Singular Value" if i == 0 else "Cumulative Variance")
 
         # Vertical line at k
         ax.axvline(target_k, color="#636e72", ls="--", lw=1.2, alpha=0.6)
 
+        # Horizontal reference line
         if i == 0:
-            # Horizontal line at singular value of component k
             ax.axhline(k_singular_val, color="#b2bec3", ls=":", lw=1)
-            yticks = list(ax.get_yticks())
-            yticks = [t for t in yticks if abs(t - k_singular_val) > (max(s_vals_first) * 0.05)]
-            ax.set_yticks(sorted(yticks + [k_singular_val]))
+            target_val = k_singular_val
         else:
-            # Horizontal line at cumulative variance of component k
             ax.axhline(var_at_k, color="#b2bec3", ls=":", lw=1.5)
             ax.yaxis.set_major_formatter(two_dec_formatter)
-            yticks = list(ax.get_yticks())
-            yticks = [t for t in yticks if abs(t - var_at_k) > 0.04]
-            ax.set_yticks(sorted(yticks + [var_at_k]))
+            target_val = var_at_k
 
-        # Ensure target_k is included in x-ticks
-        xticks = sorted(list(set(list(ax.get_xticks()) + [target_k])))
+        # Ensure k is in x‑ticks
+        xticks = sorted(set(ax.get_xticks()).union({target_k}))
         ax.set_xticks([t for t in xticks if t >= 0])
 
-        # Bold and color-highlight the tick corresponding to k
+        # Highlight tick labels
         plt.draw()
         for tick in ax.get_xticklabels():
             if tick.get_text() == str(target_k):
@@ -890,29 +886,28 @@ def plot_pca_results(
 
         for tick in ax.get_yticklabels():
             try:
-                clean_text = tick.get_text().replace('−', '-').strip()
-                val = float(clean_text)
-                target = k_singular_val if i == 0 else var_at_k
-                if abs(val - target) < 0.01:
+                if abs(float(tick.get_text().replace('−', '-')) - target_val) < 0.01:
                     tick.set_fontweight("bold")
                     tick.set_color("#d85a30")
             except ValueError:
-                continue
+                pass
 
-    # Global styling and legend
+    # -------------------------------------------------
+    # Step 3-6: Final styling
+    # -------------------------------------------------
     titles = ["Singular Value Spectrum", "Cumulative Variance Explained"]
     for i, ax in enumerate(axes):
-        ax.set_title(titles[i], loc="center", fontweight="semibold", pad=20)
+        ax.set_title(titles[i], fontweight="semibold", pad=20)
         ax.yaxis.grid(True, linestyle="--", alpha=0.3)
         ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=2, frameon=False)
 
     sns.despine(trim=True)
     plt.tight_layout(rect=[0, 0.05, 1, 0.92])
-    
-    # Save the figure if image_save and image_path are provided
+
+    # Save figure
     if image_save and image_path:
-        fig.savefig(image_path+image_save, dpi=300, bbox_inches='tight')
-    
+        fig.savefig(image_path + image_save, dpi=300, bbox_inches='tight')
+
     plt.show()
 
 
@@ -1976,3 +1971,111 @@ def plot_structural_break(
 
     plt.subplots_adjust(top=0.92, bottom=0.08, right=0.82)
     plt.show()
+
+
+# ---------------------------------------------------------------------------
+# 8. Era-level CLR heatmap visualization with regime-shift deltas
+# ---------------------------------------------------------------------------
+def plot_era_heatmaps(data_dict, stat_type='mean', image_path=None, image_name=None, verbose=False):
+    """
+    Plot era-level CLR heatmaps and regime-shift deltas.
+    """
+    # ------------------------------------------------------------
+    # 8-1: Data validation and preparation
+    # ------------------------------------------------------------
+    is_mean = stat_type.lower() == 'mean'
+    df_key = 'era_means' if is_mean else 'era_stds'
+    
+    # Robust check for required DataFrame in data_dict
+    if df_key not in data_dict:
+        raise KeyError(f"'{df_key}' not found in data_dict.")
+
+    # Deep copy to avoid mutating original data
+    df = data_dict[df_key].copy()
+    
+    # Extract date range for title annotation
+    ranges = data_dict.get("era_date_ranges", {})
+    all_dates = [d for pair in ranges.values() for d in pair]
+    date_range_str = f"{min(all_dates)} to {max(all_dates)}" if all_dates else "N/A"
+
+    # Define metric names and labels based on the statistic type
+    metric_name = "Mean CLR" if is_mean else "CLR Volatility"
+    delta_label = r"$\mathbf{\Delta}$ CLR"
+    
+    # ------------------------------------------------------------
+    # 8-2: Sort by the magnitude of the initial COVID disruption 
+    #      if available 
+    # ------------------------------------------------------------
+    sort_col = 'COVID_minus_Pre-COVID'
+    if sort_col in df.columns:
+        df = df.reindex(df[sort_col].abs().sort_values(ascending=False).index)
+
+    # ------------------------------------------------------------
+    # 8-3: Set up the figure and panel layout
+    # ------------------------------------------------------------
+    sns.set_theme(style="white")
+    fig, axes = plt.subplots(
+        1, 4, figsize=(26, max(5, len(df) * 0.40)),
+        gridspec_kw={'width_ratios': [3, 1, 1, 1], 'wspace': 0.15},
+        constrained_layout=True
+    )
+
+    # Define the 4 panels: (Columns, Title, Cmap, IsDelta)
+    panels = [
+        (['Pre-COVID', 'COVID', 'Post-COVID'], f"{metric_name} per Era", 'RdBu_r' if is_mean else 'YlOrRd', False),
+        (['COVID_minus_Pre-COVID'], "Shift:\nPre → COVID", 'RdBu_r', True),
+        (['Post-COVID_minus_COVID'], "Shift:\nCOVID → Post", 'RdBu_r', True),
+        (['Post-COVID_minus_Pre-COVID'], "Shift:\nPre → Post", 'RdBu_r', True)
+    ]
+
+    # -------------------------------------------------------------
+    # 8-4: Plot each panel with consistent styling and annotations
+    # -------------------------------------------------------------
+    for i, (cols, title, cmap, is_delta) in enumerate(panels):
+        ax = axes[i]
+        label = delta_label if is_delta else metric_name
+        
+        sns.heatmap(
+            df[cols], ax=ax, cmap=cmap, annot=True, fmt=".2f",
+            center=0 if (is_delta or is_mean) else None,
+            linewidths=0.5, linecolor="white",
+            cbar_kws={'label': label, 'shrink': 0.7},
+            annot_kws={'size': 12}
+        )
+
+        # Style titles and axes
+        ax.set_title(title, fontsize=15, fontweight='bold', pad=18)
+        ax.set(xlabel="", ylabel="")
+        ax.tick_params(axis='x', labelsize=13)
+        
+        # Style the colorbar label
+        ax.collections[0].colorbar.set_label(label, fontsize=13, fontweight='bold')
+
+        # Hide y-axis labels for all but the first panel
+        if i == 0:
+            ax.tick_params(axis='y', labelsize=13)
+        else:
+            ax.set_yticks([])
+
+    # ------------------------------------------------------------
+    # 8-5: Final layout adjustments and optional saving
+    # ------------------------------------------------------------
+    plt.suptitle(
+        f"{metric_name} Analysis - Chicago Crime ({date_range_str})\n"
+        f"Sorted by Magnitude of Initial COVID Disruption",
+        fontsize=22, fontweight='bold', y=1.08
+    )
+
+    # Save the figure if path and name are provided
+    if image_path and image_name:
+        plt.savefig(f"{image_path}/{image_name}_{stat_type}.png", dpi=300, bbox_inches='tight')
+
+    plt.show()
+
+    # ------------------------------------------------------------
+    # 8-6: Verbose terminal output of the DataFrame for display purposes
+    # ------------------------------------------------------------
+    if verbose:
+        line = "=" * 100
+        print(f"\n{line}\n📊 {metric_name.upper()} DATA ANALYSIS ({date_range_str})\n{line}")
+        print(df.round(3).to_string())
