@@ -121,7 +121,7 @@ def slice_clr_into_eras(clr_dict, era_boundaries, eps):
 # 2-0. Main function to compute era distribution parameters and pairwise deltas with 
 #      optional verbose reporting
 # ------------------------------------------------------------------------------
-def compute_era_distribution_parameters(eras_dict, sparse_cats=None, verbose=True, 
+def compute_era_distribution_parameters(eras_dict, sparse_cats=None, verbose=False, 
                                         report_width=95, precision_threshold=9):
     """
     Compute per‑era distribution statistics (means, stds, covariances, shrinkage, 
@@ -169,11 +169,19 @@ def compute_era_distribution_parameters(eras_dict, sparse_cats=None, verbose=Tru
     - Pairwise deltas are computed vectorized across all eras.
     """
     # ------------------------------------------------------------------------------ 
-    # 2-0-A: Data Preparation & Normalize sparse category list and drop those columns 
-    #      from each era DataFrame
+    # 2-0-A: Data Preparation & Normalize sparse category list and drop those columns
     # ------------------------------------------------------------------------------
     sparse_cats = sorted(list(set(sparse_cats))) if sparse_cats else []
     eras = {n: df.drop(columns=sparse_cats, errors='ignore') for n, df in eras_dict.items()}
+    # Re-center CLR values for each era to ensure comparability after dropping sparse categories.
+    for name, df in eras.items():
+        # 1. Calculate the mean of the remaining categories for each row
+        row_means = df.mean(axis=1) 
+        
+        # 2. Subtract that mean from each value to re-center the composition
+        # This "re-normalizes" the CLR values to the new category universe
+        eras[name] = df.sub(row_means, axis=0)
+    # Update era names and prepare date range storage after dropping sparse categories
     era_names = list(eras.keys())
     era_date_ranges = {}  # To store date ranges for reporting
 
@@ -805,7 +813,7 @@ def _print_stationarity_report(df, sparse_cats, zero_rates, era_boundaries, seas
 # -----------------------------------------------------------------------------
 # Helper Function 3-D-1: 
 # -----------------------------------------------------------------------------
-def _print_bootstrap_report(df, title, n1_info, n2_info, block_size, n_bootstrap):
+def _print_bootstrap_report(df, title, n1_info, n2_info, block_size, n_bootstrap, label2):
     """
     Print a formatted bootstrap inference report with dynamic column widths.
 
@@ -821,7 +829,7 @@ def _print_bootstrap_report(df, title, n1_info, n2_info, block_size, n_bootstrap
     df : pd.DataFrame
         Bootstrap results table. Expected columns include:
             - delta_mean : float
-            - hedges_g_clr : float
+            - hedges_g : float
             - p_bootstrap : float
             - p_adj : float (optional, dense only)
             - is_sparse : bool
@@ -849,7 +857,7 @@ def _print_bootstrap_report(df, title, n1_info, n2_info, block_size, n_bootstrap
     - Column widths are fixed for readability.
     """
     # Load glyphs for visual formatting
-    GREEN, RESET = "\033[92m", "\033[0m"
+    GREEN, RED, RESET = "\033[92m", "\033[91m", "\033[0m"
     BOLD, DIM = "\033[1m", "\033[2m"
     
     # Fixed line width for consistent formatting across all rows
@@ -868,37 +876,50 @@ def _print_bootstrap_report(df, title, n1_info, n2_info, block_size, n_bootstrap
     # 3-D-1-B: Table Header
     # ---------------------------
     print(f"\n{BOLD}{'CATEGORY':<35} {'Δ MEAN':>10} {'HEDGES G':>12} {'P-VAL':>10} {'FDR ADJ':>10}   {'STATUS'}{RESET}")
-    print("-" * W_LINE)
+    print(f"{DIM}{'─' * W_LINE}{RESET}")
 
     # -----------------------------------------------
     # 3-D-1-C: Table Rows with Conditional Formatting
     # ------------------------------------------------
     for row in df.itertuples():
-        # Truncate long category names for clean formatting
-        name = (row.Index[:32] + "...") if len(row.Index) > 33 else row.Index
+        # Truncate the name at exactly 32 chars to leave a 3-char buffer before Δ MEAN
+        name = (row.Index[:32] + "..") if len(row.Index) > 33 else row.Index
         
-        # Handle sparse categories separately (no FDR adjustment)
+        # Pull values
+        d_mean = f"{row.delta_mean:>10.4f}"
+        # We ensure we use the same column for every number
+        h_g    = f"{row.hedges_g:>12.4f}" 
+        p_val  = f"{row.p_bootstrap:>10.4f}"
+        
         if getattr(row, 'is_sparse', False):
-            print(f"{DIM}{name:<35} {row.delta_mean:>10.4f} {row.hedges_g_clr:>12.4f} "
-                  f"{row.p_bootstrap:>10.4f} {'--':>10}   📌 SPARSE{RESET}")
+            # Sparse rows use '--' for the adjusted P-value
+            print(f"{DIM}{name:<35} {d_mean} {h_g} {p_val} {'--':>10}   📌 SPARSE/BYPASS{RESET}")
         else:
-            # Dense categories: include FDR-adjusted p-values
             p_adj = getattr(row, 'p_adj', 1.0)
+            p_adj_str = f"{p_adj:>10.4f}"
             p_color = GREEN if p_adj < 0.05 else ""
-            # Significance flag
-            status = f"✨ {GREEN}Significant{RESET}" if getattr(row, 'mean_sig', False) else f"{DIM}Not Significant{RESET}"
+            status = f"✨ {GREEN}Significant{RESET}" if getattr(row, 'mean_sig', False) else f"{DIM}🚫 Not Significant{RESET}"
             
-            # Print the row with conditional coloring for significant results
-            print(f"{name:<35} {row.delta_mean:>10.4f} {row.hedges_g_clr:>12.4f} "
-                  f"{row.p_bootstrap:>10.4f} {p_color}{p_adj:>10.4f}{RESET}   {status}")
+            # THE KEY LINE: Every variable is placed in a slot of fixed width
+            print(f"{name:<35} {d_mean} {h_g} {p_val} {p_color}{p_adj_str}{RESET}   {status}")
 
     # ---------------------------
     # 3-D-1-D: Summary Footer
     # ---------------------------
     sig_count = df['mean_sig'].sum() if 'mean_sig' in df.columns else 0
-    print("-" * W_LINE)
-    print(f"{BOLD}✅ RESULT:{RESET} {sig_count} shifts detected.\n")
-
+    
+    # Simple clean divider
+    print(f"\n{BOLD}{'─' * W_LINE}{RESET}")
+    print(f" {BOLD}✅ RESULT:{RESET} {GREEN if sig_count > 0 else ''}{sig_count} shifts detected.{RESET}")
+    
+    # Minimalist Key
+    print(f"\n {' ' * 2}{BOLD}{DIM}INTERPRETATION KEY:{RESET}")
+    
+    # We use a simple vertical bar and aligned text
+    print(f"  {' ' * 2} {BOLD}HEDGES G{RESET}      {DIM}│{RESET}  {GREEN}(+) {RESET}Share Grew in {label2}")
+    print(f"  {' ' * 2} {BOLD}HEDGES G{RESET}      {DIM}│{RESET}  {RED}(-) {RESET}Share Shrank in {label2}")
+    
+    print(f"{BOLD}{'─' * W_LINE}{RESET}\n")
 
 # -----------------------------------------------------------------------------
 # Helper Function 4-D: Hedges' g effect size calculation with small sample correction
@@ -915,7 +936,6 @@ def _calculate_hedges_g(x1, x2):
 
     Note: this is the OPPOSITE sign to the CLR difference tables,
     where Pre_minus_COVID = Pre - COVID.
-    Use hedges_g_clr in the results DataFrame for a consistent sign.
     """
     n1, n2 = len(x1), len(x2)
     s1, s2 = np.std(x1, ddof=1), np.std(x2, ddof=1)
@@ -958,7 +978,7 @@ def _block_bootstrap_logic(x1, x2, block_size, n_bootstrap, seed):
     
     # Generate bootstrap means for both groups and calculate the difference for each iteration
     boot_diffs = _get_boot_means(n2, blocks2) - _get_boot_means(n1, blocks1)
-    p_val = np.mean(np.abs(boot_diffs) >= np.abs(observed_diff))
+    p_val = (1 + np.sum(np.abs(boot_diffs) >= np.abs(observed_diff))) / (1 + n_bootstrap)
     
     return observed_diff, p_val
 
@@ -967,30 +987,144 @@ def _block_bootstrap_logic(x1, x2, block_size, n_bootstrap, seed):
 # ----------------------------------------------------------------------------
 # 5. Main Function to Run Era Comparison with Block Bootstrap and Multiple Testing Correction
 # ----------------------------------------------------------------------------
-def run_era_comparison(data, era1_df, era2_df, label1="Era 1", label2="Era 2",
+def run_era_comparison(era1_df, era2_df, label1="Era 1", label2="Era 2",
                        verbose=False, block_size=12, n_bootstrap=10_000,
-                       seed=None, sparse_cats=None):
+                       seed=None, sparse_cats=None,
+                       min_effective_blocks=5, alpha=0.05):
     """
-    Runs the bootstrap test across all categories.
-    Set verbose=True to trigger the formatted print output.
+    Block bootstrap comparison of CLR-transformed compositional data
+    between two eras, with BH-FDR correction across categories.
+
+    For each category (column), performs a block bootstrap test of
+    the mean difference between era1 and era2, then applies the
+    Benjamini-Hochberg false discovery rate correction across all
+    dense (non-sparse) categories at the specified alpha level.
+
+    Parameters
+    ----------
+    era1_df : pd.DataFrame
+        CLR-transformed data for the earlier era, shape (T1, K).
+        Rows are observations (e.g., months), columns are categories.
+
+    era2_df : pd.DataFrame
+        CLR-transformed data for the later era, shape (T2, K).
+        Must have the same columns as era1_df.
+
+    label1 : str, default "Era 1"
+        Display label for era1_df in reports and `.attrs` metadata.
+
+    label2 : str, default "Era 2"
+        Display label for era2_df in reports and `.attrs` metadata.
+
+    verbose : bool, default False
+        If True, prints a formatted significance report via
+        `_print_bootstrap_report`. The returned DataFrame is identical
+        regardless of this setting.
+
+    block_size : int, default 12
+        Block length for circular block bootstrap. Preserves temporal
+        autocorrelation within blocks of this many consecutive months.
+        Auto-adjusted downward if the shortest era produces fewer than
+        `min_effective_blocks` (see Notes).
+
+    n_bootstrap : int, default 10,000
+        Number of bootstrap iterations. Sets the resolution floor of
+        the empirical p-values: the minimum reportable p_bootstrap is
+        approximately 1 / (1 + n_bootstrap).
+
+    seed : int or None, default None
+        Master seed for reproducibility. When set, each category gets
+        a deterministic independent RNG stream derived from this seed
+        via `numpy.random.SeedSequence.spawn`. None uses fresh OS
+        entropy (non-reproducible).
+
+    sparse_cats : list of str or None, default None
+        Category names to flag as sparse. Still computed for reference
+        (delta_mean, hedges_g, p_bootstrap are populated) but excluded
+        from BH-FDR correction: their p_adj is set to NaN and mean_sig
+        to False. Use for categories with high zero-imputation rates
+        where CLR statistics are dominated by the zero-replacement rule.
+
+    min_effective_blocks : int, default 5
+        Minimum number of effective bootstrap blocks below which
+        block_size is auto-reduced. The effective block count is
+        min(T1, T2) / block_size. When this falls below the threshold,
+        block_size is reduced to max(3, min(T1, T2) // min_effective_blocks)
+        and a UserWarning is issued.
+
+    alpha : float, default 0.05
+        FDR significance threshold. Categories with p_adj < alpha are
+        flagged as significant (mean_sig = True). Recorded in .attrs.
+
+    Returns
+    -------
+    res_df : pd.DataFrame
+        One row per category in era1_df.columns, sorted by absolute
+        Hedges' g (descending). Columns:
+            'delta_mean'  : mean(era2) - mean(era1) for that category
+            'hedges_g'    : standardized effect size (positive = grew
+                            in era2)
+            'p_bootstrap' : empirical two-tailed p-value from the block
+                            bootstrap
+            'is_sparse'   : True if category was in sparse_cats
+            'p_adj'       : BH-FDR adjusted p-value (NaN for sparse)
+            'mean_sig'    : True if p_adj < alpha (False for sparse)
+
+        The DataFrame's `.attrs` dict carries the full run configuration:
+        block_size (after any adjustment), block_size_requested,
+        min_effective_blocks, n_bootstrap, seed, era1_label, era1_n,
+        era2_label, era2_n, sparse_cats, and alpha.
 
     Notes
     -----
-    block_size is auto-adjusted if the shortest era produces fewer
-    than 5 effective blocks. The original value is preserved
-    in the warning.
+    Sign convention:
+        delta_mean and hedges_g share the convention
+        (mean(era2) - mean(era1)): positive values mean the CLR share
+        grew in the later era. This matches the bootstrap-report
+        formatting and the descriptive era-distribution module.
 
-    sparse_cats : list of str, optional
-        Category names to flag as sparse. These are still computed
-        for reference but excluded from BH-FDR correction.
-        Their p_adj is set to NaN and mean_sig to False.
+    Block-size auto-adjustment:
+        When min(T1, T2) / block_size < min_effective_blocks, the block
+        size is reduced and a UserWarning is issued naming both the
+        requested and adjusted values. Both are recorded in .attrs so
+        the adjustment is traceable. Auto-adjustment is intended for
+        defensive use; if it triggers repeatedly, consider whether the
+        bootstrap is well-powered for the comparison at all.
+
+    Per-category seeding:
+        Each category's bootstrap uses an independent RNG stream
+        derived from the master `seed` via SeedSequence.spawn. This
+        ensures cross-category independence while preserving overall
+        reproducibility from the single master seed.
+
+    FDR scope:
+        BH-FDR is applied across dense categories only, with m equal
+        to the number of dense categories. Sparse categories are
+        excluded from this multiple-testing adjustment, so the FDR
+        guarantee applies only to the dense set.
+
+    Examples
+    --------
+    >>> sparse_cats = ['Gambling', 'Involuntary Manslaughter / Reckless Homicide']
+    >>> result = run_era_comparison(
+    ...     clr_era['Pre-COVID'], clr_era['COVID'],
+    ...     label1='Pre-COVID', label2='COVID',
+    ...     sparse_cats=sparse_cats,
+    ...     block_size=6,
+    ...     seed=1776,
+    ...     verbose=True,
+    ... )
+    >>> result['mean_sig'].sum()    # number of significant categories
+    23
+    >>> result.attrs['block_size']  # actual block size used
+    6
     """
     # Block size auto-adjustment
     min_T         = min(len(era1_df), len(era2_df))
     original_size = block_size
     # Ensure block size is not larger than the shortest era and provides at least 5 effective blocks
-    if min_T / block_size < 5:
-        block_size = max(3, min_T // 5)
+    if min_T / block_size < min_effective_blocks:
+        block_size = max(3, min_T // min_effective_blocks)
         warnings.warn(
             f"\nBlock bootstrap - block size auto-adjusted:"
             f"\n  Shortest era      : T = {min_T}"
@@ -1003,22 +1137,30 @@ def run_era_comparison(data, era1_df, era2_df, label1="Era 1", label2="Era 2",
             UserWarning,
             stacklevel=2
         )
-
     # Ensure sparse_cats is a set for faster lookup and handle None case
     sparse_cats = set(sparse_cats) if sparse_cats else set()
-    # Run bootstrap for each category and collect results in a list of dicts for DataFrame construction
+
+    # Build a SeedSequence and spawn one independent child per category
+    if seed is not None:
+        ss = np.random.SeedSequence(seed)
+        cat_seeds = ss.spawn(len(era1_df.columns))
+        cat_seed_map = dict(zip(era1_df.columns, cat_seeds))
+    else:
+        cat_seed_map = {col: None for col in era1_df.columns}
+
+    # Run bootstrap for each category and collect results
     results = []
-    for col in data.columns:
+    for col in era1_df.columns:
         x1, x2 = era1_df[col].values, era2_df[col].values
-
-        diff, p = _block_bootstrap_logic(x1, x2, block_size, n_bootstrap, seed=seed)
-        g       = _calculate_hedges_g(x1, x2)
-
+        diff, p = _block_bootstrap_logic(
+            x1, x2, block_size, n_bootstrap,
+            seed=cat_seed_map[col]
+        )
+        g = _calculate_hedges_g(x1, x2)
         results.append({
             'crime'       : col,
             'delta_mean'  : diff,
             'hedges_g'    : g,
-            'hedges_g_clr': -g,
             'p_bootstrap' : p,
             'is_sparse'   : col in sparse_cats
         })
@@ -1037,7 +1179,7 @@ def run_era_comparison(data, era1_df, era2_df, label1="Era 1", label2="Era 2",
     )
     # Mark significant mean shifts among dense categories based on adjusted p-values
     res_df.loc[dense_mask, 'mean_sig'] = ( 
-        res_df.loc[dense_mask, 'p_adj'] < 0.05
+        res_df.loc[dense_mask, 'p_adj'] < alpha
     )
     # Sort results by absolute magnitude of Hedges' g for better interpretability, with clear formatting and interpretation notes
     res_df = res_df.sort_values(by='hedges_g', key=abs, ascending=False)
@@ -1048,8 +1190,22 @@ def run_era_comparison(data, era1_df, era2_df, label1="Era 1", label2="Era 2",
             res_df, title,
             (label1, len(era1_df)),
             (label2, len(era2_df)),
-            block_size, n_bootstrap
+            block_size, n_bootstrap,
+            label2
         )
+
+    # Attach run configuration as DataFrame metadata
+    res_df.attrs['block_size']           = block_size
+    res_df.attrs['block_size_requested'] = original_size
+    res_df.attrs['min_effective_blocks'] = min_effective_blocks
+    res_df.attrs['n_bootstrap']          = n_bootstrap
+    res_df.attrs['seed']                 = seed
+    res_df.attrs['era1_label']           = label1
+    res_df.attrs['era1_n']               = len(era1_df)
+    res_df.attrs['era2_label']           = label2
+    res_df.attrs['era2_n']               = len(era2_df)
+    res_df.attrs['sparse_cats']          = sorted(sparse_cats)
+    res_df.attrs['alpha']                = alpha
 
     return res_df
 

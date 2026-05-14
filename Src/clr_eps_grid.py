@@ -1,7 +1,7 @@
 import warnings
 import numpy as np
 import pandas as pd
-from typing import Sequence, Dict, Any, Iterable
+from typing import Sequence, Dict, Any, Tuple, Iterable
 import clr_config as cfg
 import matplotlib.pyplot as plt
 from scipy.stats import spearmanr, kendalltau
@@ -734,14 +734,34 @@ def sweep_epsilon_grid(
 
     # meta: always present; when auto_select is False it is minimal
     if auto_select:
-        meta = _auto_select(diagnostics_df, kendall_threshold, spearman_threshold)
+        chosen_eps, chosen_reason, chosen_status = select_eps(
+            diagnostics_df, kendall_threshold, spearman_threshold
+        )
+        
+        # Map plain status tags to descriptive display messages
+        status_messages = {
+            'optimal':      '🟢 Optimal stability — strict zero-artifact and rank-stability thresholds satisfied.',
+            'near_optimal': '🟡 Near-optimal stability — within additive tolerance of the best observed metrics.',
+            'elbow':        '🔵 Elbow-based selection — sharpest knee detected in distortion curve on log-eps axis.',
+            'fallback':     '🟠 Fallback selection — no plateau or elbow found; composite score across metrics used. Interpret with caution.',
+        }
+        
+        meta = {
+            "auto_select":   True,
+            "chosen_eps":    chosen_eps,
+            "chosen_reason": chosen_reason,
+            "chosen_status": status_messages.get(chosen_status, chosen_status),
+            "chosen_tag":    chosen_status,   # keep the plain tag too for programmatic logic
+            "chosen_row":    diagnostics_df.loc[chosen_eps].to_dict(),
+        }
     else:
         meta = {
-            "auto_select": False,
-            "chosen_eps": None,
+            "auto_select":   False,
+            "chosen_eps":    None,
             "chosen_reason": None,
-            "chosen_msg": None,
-            "chosen_row": None,
+            "chosen_status": None,
+            "chosen_tag":    None,
+            "chosen_row":    None,
         }
 
     fig = None
@@ -970,153 +990,217 @@ def _plot_diagnostics(
     return fig
 
 # ---------------------------------------------------------------------------
-# Helper function 2-C: Automated epsilon selection based on diagnostics
+# 3: Automated epsilon selection based on diagnostics
 # ---------------------------------------------------------------------------
-def _auto_select(
-    data_df: pd.DataFrame,
-    kendall_threshold: float,
-    spearman_threshold: float
-) -> dict[str, Any]:
+def select_eps(
+    df: pd.DataFrame,
+    kendall_thresh: float,
+    spearman_thresh: float,
+    tol: float = 1e-12,
+    slack_zero: float = 0.005,
+    slack_kendall: float = 0.010,
+    slack_spear: float = 0.005,
+    elbow_threshold: float = 0.25,
+    fallback_weights: tuple = (1.0, 1.0, 1.0),
+) -> Tuple[float, str, str]:
     """
-    Automatically select an epsilon value based on diagnostic stability.
+    Select the CLR zero-handling epsilon via cascading-fallback criteria.
 
-    Uses rank‑stability and sensitivity diagnostics to choose the smallest
-    epsilon that satisfies the required thresholds. Delegates the actual
-    decision logic to `_select_eps`, then packages the result with a
-    human‑readable message and the corresponding diagnostic row.
-
-    Steps:
-      A. Validate that diagnostics are available
-      B. Sort diagnostics by epsilon
-      C. Apply selection logic via `_select_eps`
-      D. Construct a user‑facing message summarizing the choice
-      E. Return the chosen epsilon and its diagnostic row
+    Evaluates an epsilon sweep against three diagnostic metrics and returns
+    the smallest epsilon that satisfies progressively weaker stage criteria.
+    The cascade order is hard plateau -> soft plateau -> elbow -> composite
+    fallback; each stage runs only if the previous stage finds no qualifying
+    rows.
 
     Parameters
     ----------
-    data_df : pd.DataFrame
-        Diagnostic table indexed by epsilon.
+    df : pd.DataFrame
+        Sweep diagnostics indexed by candidate epsilon values (sorted
+        ascending internally). Required columns:
+            'pct_cells_near_zero'      : fraction of cells imputed as ~zero
+                                         (e.g., from sweep_epsilon_grid)
+            'rank_stability_kendall'   : Kendall tau vs reference ranking
+            'rank_stability_spearman'  : Spearman rho vs reference ranking
+            'mean_max_abs_clr'         : distortion magnitude (Stage 3 elbow)
 
-    kendall_threshold : float
-        Minimum acceptable Kendall τ stability.
+    kendall_thresh : float
+        Strict Kendall threshold for Stage 1 hard plateau (e.g., 0.98).
 
-    spearman_threshold : float
-        Minimum acceptable Spearman stability.
+    spearman_thresh : float
+        Strict Spearman threshold for Stage 1 hard plateau (e.g., 0.999).
+
+    tol : float, default 1e-12
+        Strict tolerance for "no zero artifacts" in Stage 1. A row qualifies
+        for the hard plateau only if pct_cells_near_zero <= tol. The default
+        is essentially zero; pass a small positive value (e.g., 0.001) to
+        make Stage 1 reachable on sweeps with residual near-zero cells.
+
+    slack_zero : float, default 0.005
+        Stage 2 additive tolerance for pct_cells_near_zero. A row qualifies
+        if its zero rate is within `slack_zero` of the sweep's minimum.
+        The default of 0.5 percentage point reflects the small sampling
+        noise of a metric computed on T*K cells.
+
+    slack_kendall : float, default 0.010
+        Stage 2 additive tolerance for rank_stability_kendall. A row
+        qualifies if its Kendall is within `slack_kendall` of the sweep's
+        maximum. The default of 1 percentage point matches the typical
+        sampling SE of Kendall tau on T~300 samples (~0.01-0.02), so it
+        avoids rejecting rows that are statistically indistinguishable
+        from the best.
+
+    slack_spear : float, default 0.005
+        Stage 2 additive tolerance for rank_stability_spearman. Spearman
+        has tighter sampling SE than Kendall, so a smaller slack is used.
+
+    elbow_threshold : float, default 0.25
+        Stage 3 trigger: a row's normalized curvature must exceed this
+        fraction of the sweep's max curvature to count as an elbow.
+        Lower values detect gentler bends; higher values demand sharper
+        knees.
+
+    fallback_weights : tuple of 3 floats, default (1.0, 1.0, 1.0)
+        Stage 4 weights for (zero_score, kendall, spearman) in the
+        composite score. Increase the first weight to penalize zero
+        artifacts more aggressively in the fallback.
 
     Returns
     -------
-    dict[str, Any]
-        {
-            "chosen_eps": float,
-            "chosen_reason": str,
-            "chosen_msg": str,
-            "chosen_row": dict
-        }
+    eps : float
+        The selected epsilon value (drawn from df.index).
+
+    reason : str
+        Human-readable description of which stage triggered.
+
+    status : str
+        Plain status tag for downstream display logic:
+            'optimal'      - Stage 1 hard plateau
+            'near_optimal' - Stage 2 soft plateau
+            'elbow'        - Stage 3 elbow detection
+            'fallback'     - Stage 4 composite fallback
+
+    Notes
+    -----
+    Cascading philosophy:
+        Stage 1 is strict by design and may not fire on noisy real data.
+        That is expected. Stage 2 then catches "good enough" cases using
+        metric-specific additive slack calibrated to each metric's
+        sampling noise. Stage 3 falls back to elbow detection if metrics
+        never plateau. Stage 4 is a least-bad-option choice that flags
+        a caution status; recurring Stage 4 hits suggest the sweep itself
+        is underpowered or poorly designed.
+
+    Stage 2 slack calibration:
+        The three slack parameters are intentionally different to reflect
+        the underlying sampling noise of each metric:
+            - Zero rate is computed on T*K cells (thousands of values)
+              and has tiny SE; small slack (0.005) is conservative.
+            - Kendall has larger SE on rank correlations from T~300
+              samples; slack of 0.010 lets rows within ~1 SE qualify.
+            - Spearman has SE about 60-70% of Kendall's at the same N;
+              slack of 0.005 reflects this tighter distribution.
+        The prior uniform slack design implicitly demanded ~10x stricter
+        agreement on Kendall than the metric's sampling noise warranted.
+
+    Stage 3 curvature:
+        Computed via two applications of `np.gradient` on the log10(eps)
+        axis. This produces a 5-point stencil approximation of d^2/dx^2,
+        handles non-uniform spacing correctly, and gives values at the
+        endpoints (unlike a centered finite difference). The log
+        transform is essential: a finite difference on the raw eps
+        axis would produce spurious large "curvature" values driven by
+        the non-uniform spacing of a log-spaced sweep, not by the
+        underlying function shape.
+
+    Stage 4 composite:
+        A normalized sum across the three metrics rather than a
+        lexicographic sort. Avoids the failure mode where a row with
+        marginally lower zero rate but much worse rank stability beats
+        a row with slightly higher zero rate and excellent stability,
+        purely on tiebreaker order.
+
+    Examples
+    --------
+    >>> from sweep import sweep_epsilon_grid
+    >>> sweep = sweep_epsilon_grid(pivot, np.logspace(-6, -1, 30))
+    >>> eps, reason, status = select_eps(
+    ...     sweep['diagnostics_df'],
+    ...     kendall_thresh=0.98,
+    ...     spearman_thresh=0.999,
+    ... )
+    >>> print(f"Selected eps={eps:.2e} via {status}: {reason}")
+    Selected eps=3.16e-04 via near_optimal: Soft plateau (near-asymptotic)
     """
-    # -------------------------------------------------
-    # A — Validate that diagnostics exist
-    # -------------------------------------------------
-    if data_df.empty:
-        raise ValueError("diagnostics_df is empty; cannot auto-select eps.")
+    df = df.copy().sort_index()
 
-    # -------------------------------------------------
-    # B — Sort diagnostics by epsilon for consistent selection
-    # -------------------------------------------------
-    data = data_df.sort_index().copy()
-
-    # -------------------------------------------------
-    # C — Apply selection logic (delegated to _select_eps)
-    # -------------------------------------------------
-    chosen_eps, reason, msg = _select_eps(
-        data,
-        kendall_threshold,
-        spearman_threshold
+    # ------------------------------------------------------------
+    # Stage 1 - Hard Plateau (strict)
+    # ------------------------------------------------------------
+    hard_mask = (
+        (df['pct_cells_near_zero']      <= tol) &
+        (df['rank_stability_kendall']   >= kendall_thresh) &
+        (df['rank_stability_spearman']  >= spearman_thresh)
     )
+    hard_plateau = df[hard_mask]
+    if not hard_plateau.empty:
+        eps = float(hard_plateau.index.min())
+        return eps, "Hard plateau (zero artifacts negligible)", "optimal"
 
-    # -------------------------------------------------
-    # D — Build a user-facing message summarizing the choice
-    # -------------------------------------------------
-    full_msg = f"{msg} ε={chosen_eps} ** Verify using the four plots. **"
+    # ------------------------------------------------------------
+    # Stage 2 - Soft Plateau (additive tolerance, metric-specific)
+    # ------------------------------------------------------------
+    min_zero = df['pct_cells_near_zero'].min()
+    max_k    = df['rank_stability_kendall'].max()
+    max_s    = df['rank_stability_spearman'].max()
 
-    # -------------------------------------------------
-    # E — Return selected epsilon and its diagnostic row
-    # -------------------------------------------------
-    return {
-        "chosen_eps": chosen_eps,
-        "chosen_reason": reason,
-        "chosen_msg": full_msg,
-        "chosen_row": data_df.loc[chosen_eps].to_dict(),
-    }
-
-# ---------------------------------------------------------------------------
-# Helper function 2-D: Automated epsilon selection based on diagnostics
-# ---------------------------------------------------------------------------
-def _select_eps(
-    data_df: pd.DataFrame,
-    kendall_threshold: float,
-    spearman_threshold: float
-) -> tuple[float, str, str]:
-    """
-    Three‑stage constraint cascade for epsilon selection.
-
-    Applies a hierarchical decision rule to choose the smallest epsilon
-    that satisfies increasingly relaxed stability constraints:
-
-      • Stage 1: C1 (no large CLR rows) AND C2 (Kendall ≥ threshold)
-      • Stage 2: C1 AND relaxed C2 (Spearman ≥ threshold)
-      • Stage 3: C1 only (rank stability saturated; Kendall unattainable)
-
-    If none of the stages produce a feasible epsilon, the selection
-    defaults to the largest epsilon in the grid and reports infeasibility.
-
-    Returns the chosen epsilon, a reason label, and a human‑readable
-    message describing the decision.
-    """
-    # -------------------------------------------------
-    # A — Define constraint masks
-    #     C1: No rows with large CLR values
-    #     C2: Kendall τ meets threshold
-    #     C2_relaxed: Spearman meets relaxed threshold
-    # -------------------------------------------------
-    c1 = data_df["pct_rows_large_clr"] == 0.0
-    c2 = data_df["rank_stability_kendall"] >= kendall_threshold
-    c2_relaxed = data_df["rank_stability_spearman"] >= spearman_threshold
-
-    # -------------------------------------------------
-    # B — Evaluate the three-stage cascade:
-    #     1. C1 + C2 (optimal)
-    #     2. C1 + relaxed C2 (suboptimal but acceptable)
-    #     3. C1 only (rank stability saturated)
-    # -------------------------------------------------
-    for bool_mask, reason, detail in [
-        (c1 & c2, "optimal", f"C1+C2 satisfied (kendall>={kendall_threshold})"),
-        (c1 & c2_relaxed, "suboptimal_kendall_relaxed",
-         f"C1 satisfied; C2 relaxed to spearman>={spearman_threshold}"),
-        (c1, "suboptimal_rank_saturated",
-         "C1 satisfied; C2 unachievable - rank stability saturated"),
-    ]:
-
-        # -------------------------------------------------
-        # C — If any eps satisfies the current stage,
-        #     choose the smallest feasible epsilon.
-        # -------------------------------------------------
-        candidates = data_df[bool_mask]
-        if not candidates.empty:
-            chosen = float(candidates.index.min())
-            dominated = [e for e in candidates.index if e > chosen]
-            return (
-                chosen,
-                reason,
-                f"{detail}. Optimal ε={chosen}. Pareto-dominated: {dominated}."
-            )
-
-    # -------------------------------------------------
-    # D — If no constraints are satisfied, return the
-    #     largest epsilon and mark the selection infeasible.
-    # -------------------------------------------------
-    return (
-        float(data_df.index.max()),
-        "infeasible",
-        "C1 violated for all eps: pct_rows_large_clr > 0 across the full grid. "
-        "Sparsity pathology unresolved - consider a wider eps range.",
+    soft_mask = (
+        (df['pct_cells_near_zero']      <= min_zero + slack_zero) &
+        (df['rank_stability_kendall']   >= max_k    - slack_kendall) &
+        (df['rank_stability_spearman']  >= max_s    - slack_spear)
     )
+    soft_plateau = df[soft_mask]
+    if not soft_plateau.empty:
+        eps = float(soft_plateau.index.min())
+        return eps, "Soft plateau (near-asymptotic)", "near_optimal"
+
+    # ------------------------------------------------------------
+    # Stage 3 - Elbow Detection (curvature on log10(eps) axis)
+    # ------------------------------------------------------------
+    if len(df) >= 3:
+        y = df['mean_max_abs_clr'].values
+        x = np.log10(df.index.values.astype(float))
+
+        # Second derivative via np.gradient (handles non-uniform spacing,
+        # gives values at endpoints, reads as standard calculus)
+        dy        = np.gradient(y, x)
+        curvature = np.gradient(dy, x)
+
+        max_abs_curv = np.max(np.abs(curvature))
+        if max_abs_curv > 1e-12:
+            curv_norm = curvature / max_abs_curv
+            elbow_candidates = np.where(curv_norm > elbow_threshold)[0]
+            if len(elbow_candidates) > 0:
+                best_idx = elbow_candidates[np.argmax(curv_norm[elbow_candidates])]
+                eps = float(df.index.values[best_idx])
+                return eps, "Elbow detected in distortion (log-axis curvature)", "elbow"
+
+    # ------------------------------------------------------------
+    # Stage 4 - Fallback (composite normalized score)
+    # ------------------------------------------------------------
+    # Min-max normalize zero-rate to [0, 1] where 1 is best (lowest zeros).
+    # Min-max (rather than divide-by-max) prevents amplifying noise when
+    # max_zero is small and keeps zero_norm on the same [0, 1] scale as
+    # Kendall/Spearman so all three contribute commensurate signal.
+    zero_min  = df['pct_cells_near_zero'].min()
+    zero_max  = df['pct_cells_near_zero'].max()
+    zero_norm = 1.0 - (df['pct_cells_near_zero'] - zero_min) / (zero_max - zero_min + 1e-12)
+
+    # Kendall and Spearman are already in [-1, 1]; treat negative values as 0
+    k_norm = df['rank_stability_kendall'].clip(lower=0)
+    s_norm = df['rank_stability_spearman'].clip(lower=0)
+
+    w_zero, w_k, w_s = fallback_weights
+    composite = w_zero * zero_norm + w_k * k_norm + w_s * s_norm
+
+    eps = float(composite.idxmax())
+    return eps, "Fallback (composite score across metrics)", "fallback"

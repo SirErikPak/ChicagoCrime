@@ -39,7 +39,7 @@ _EPS_GRID: A list of small values representing the Jeffreys prior grid for smoot
 config_agg = {
     "_DATE_KEY"     : "year_month",
     "_COUNTER_KEY"  : "crime_count",
-    "_GROUP_KEY"    : "fbi_code_desc",
+    "_GROUP_KEY"    : "primary_description",
 }
 
 """

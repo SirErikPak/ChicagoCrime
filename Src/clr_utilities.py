@@ -281,6 +281,7 @@ def run_integrity_report(
     
     # Core KPIs
     print(f"  • Date Horizon   : {start} to {end}")
+    print(f"  • Total Months   : {len(full_months)}")
     print(f"  • Feature Space  : {len(groups):,} crime categories")
     print(f"  • Total Panel    : {expected:,} (expected combinations)")
     print(f"  • Actual Density : {actual:,} (observed rows)")
