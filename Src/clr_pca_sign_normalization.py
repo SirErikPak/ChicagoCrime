@@ -197,7 +197,7 @@ def stable_sign_normalize(loadings: np.ndarray, coords: np.ndarray, feature_name
 # ---------------------------------------------------------------------------------------------
 # 2. Main function to compute PCA with optional feature exclusion and sign normalization
 # ---------------------------------------------------------------------------------------------
-def compute_pca(data: pd.DataFrame,  exclude_features: list=None, chosen_eps: float=None, 
+def compute_pca(data: pd.DataFrame,  exclude_features: list=None, epsilon: float=None, 
                 verbose: bool=True, method: str='anchor', anchor_observation: int=0,
                 top_n: int=3):
     """
@@ -214,7 +214,7 @@ def compute_pca(data: pd.DataFrame,  exclude_features: list=None, chosen_eps: fl
         List of feature names to remove before PCA. Blank strings are ignored.
         Features not found in the dataset are reported separately.
 
-    chosen_eps : float, optional
+    epsilon : float, optional
         Placeholder epsilon value for workflows involving CLR or log transforms.
         Not used internally but returned for bookkeeping.
 
@@ -246,7 +246,7 @@ def compute_pca(data: pd.DataFrame,  exclude_features: list=None, chosen_eps: fl
             - working_data      : DataFrame after exclusions
             - excluded_found    : list of excluded features present
             - excluded_missing  : list of excluded features not present
-            - chosen_eps        : passthrough epsilon value
+            - epsilon           : passthrough epsilon value
             - pca               : fitted sklearn PCA object
             - loadings_raw      : raw PCA loadings
             - loadings_norm     : sign‑normalized loadings (ndarray)
@@ -286,7 +286,7 @@ def compute_pca(data: pd.DataFrame,  exclude_features: list=None, chosen_eps: fl
 
     if verbose:
         # Print a summary of PCA inputs and exclusions
-        _print_pca_manifest(working_data, chosen_eps, excluded_found, excluded_missing)
+        _print_pca_manifest(working_data, epsilon, excluded_found, excluded_missing)
 
     # --------------------------------------------------------------------
     # Step 2-B: Fit PCA on the working dataset and extract raw loadings, 
@@ -310,7 +310,7 @@ def compute_pca(data: pd.DataFrame,  exclude_features: list=None, chosen_eps: fl
         'working_data'      : working_data,
         'excluded_found'    : excluded_found,
         'excluded_missing'  : excluded_missing,
-        'chosen_eps'        : chosen_eps,
+        'epsilon'           : epsilon,
         'pca'               : pca,
         'loadings_raw'      : loadings_raw,
         'loadings_norm'     : results['loadings_norm'],
@@ -329,7 +329,7 @@ def compute_pca(data: pd.DataFrame,  exclude_features: list=None, chosen_eps: fl
 # ---------------------------------------------------------------------------------------------
 # 2-1-A: Helper function to print a formatted PCA manifest summarizing the dataset and exclusions
 # ---------------------------------------------------------------------------------------------
-def _print_pca_manifest(working_data: pd.DataFrame, chosen_eps: float = None, 
+def _print_pca_manifest(working_data: pd.DataFrame, epsilon: float = None, 
                         exclude_features: list=None, excluded_missing: list=None, se_emoji: bool=True):
     """
     Print a formatted PCA data manifest summarizing the dataset used for PCA,
@@ -343,7 +343,7 @@ def _print_pca_manifest(working_data: pd.DataFrame, chosen_eps: float = None,
         The dataset after applying feature exclusions. Row count and column
         count are displayed in the manifest.
 
-    chosen_eps : float or None
+    epsilon : float or None
         Optional epsilon value used in CLR or log‑ratio transformations.
         Displayed in the header if provided.
 
@@ -380,8 +380,8 @@ def _print_pca_manifest(working_data: pd.DataFrame, chosen_eps: float = None,
 
     # Header includes epsilon value if provided
     header = (
-        f"{chart} PCA DATA MANIFEST (ε = {chosen_eps:.3f})"
-        if chosen_eps is not None else f"{chart} PCA DATA MANIFEST"
+        f"{chart} PCA DATA MANIFEST (ε = {epsilon:.3f})"
+        if epsilon is not None else f"{chart} PCA DATA MANIFEST"
     )
 
     # Begin printing the manifest

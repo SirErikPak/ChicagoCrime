@@ -1,7 +1,9 @@
+import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+import matplotlib as mpl
 from scatterd import scatterd
 import matplotlib.patches as mpatches
 from matplotlib.ticker import FuncFormatter
@@ -255,7 +257,11 @@ def plot_three_pc_loadings(
     verbose : bool
         Whether to print a PCA manifest summary.
     image_save : str, optional
-        If provided, saves the figure to this filename (path must be handled externally).
+        If provided, the figure is saved as `image_path + image_save`.
+        Both `image_save` and `image_path` must be set for saving to occur.
+    image_path : str, optional
+        Directory path prefix for the saved figure. Concatenated directly with
+        `image_save`, so should end with the appropriate path separator.
 
     Returns
     -------
@@ -267,9 +273,9 @@ def plot_three_pc_loadings(
             "coords_raw": raw PC scores,
             "coords_norm": normalized PC scores,
             "variance_ratio": explained variance ratios,
-            "singular_values": singular values3,
-            "excluded": list of excluded features,
-            "observation_index": index of observations (samples)
+            "singular_values": singular values,
+            "observation_index": index of observations (samples),
+            "excluded": list of excluded features
         }
     """
     # ------------------------------------------------------------
@@ -289,7 +295,7 @@ def plot_three_pc_loadings(
     if verbose:
         width, val_w , lbl_w = 50, 10, 20
         print("\n" + "═" * width)
-        print(f"{'📊 PCA DATA MANIFEST (ε = ' + f'{chosen_eps:.2g}' + ')':^{width}}")
+        print(f"{'📊 PCA DATA MANIFEST (ε = ' + f'{chosen_eps:.6f}' + ')':^{width}}")
         print("─" * width)
         print(f"{'✅ Observations':<{lbl_w}} {':':>{val_w}} {working_data.shape[0]:>{val_w}}")
         print(f"{'✅ Included Features':<{lbl_w}} {':':>{val_w}} {working_data.shape[1]:>{val_w}}")
@@ -395,7 +401,7 @@ def plot_three_pc_loadings(
     plt.subplots_adjust(left=0.45, wspace=0.15, top=0.85, bottom=0.1)
 
     plt.suptitle(
-        f"Principal Component Loadings (PC1-PC3) | ε = {chosen_eps:.2g}\n"
+        fr"Principal Component Loadings (PC1-PC3) | $\boldsymbol{{\epsilon}}$ = {chosen_eps:.6f}\n"
         f"Cumulative Variance: {ratios.sum():.1%}",
         fontweight="bold", size=18, y=0.98
     )
@@ -445,8 +451,6 @@ def print_pca_manifest(working_data, chosen_eps, excluded_found, use_emoji=True)
         print(f"      - {item}")
     
     print("=" * width + "\n")
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -505,8 +509,10 @@ def compare_pca_stability(
     dict
         {
             "composite_score": float,
-            "angles": np.ndarray,
-            "cosines": np.ndarray
+            "angles": np.ndarray of principal angles in degrees,
+            "cosines": np.ndarray of per-PC cosine similarities,
+            "coord_corrs": np.ndarray of per-PC sample-coordinate correlations,
+            "sv_diff_norm": float, L2 norm of singular-value differences
         }
     """
     # -------------------------------------------------
@@ -554,22 +560,26 @@ def compare_pca_stability(
     worst_val = cosines[worst_idx]
 
     # -------------------------------------------------
-    # 2-C: Compute a composite stability score combining all metrics into a unified index
+    # 2-C: Compute a composite stability score
     # -------------------------------------------------
-    # Penalize singular-value drift
-    sv_score = np.exp(-sv_diff_norm)
+    # 2-C-1: SV Score: Normalize the drift by the magnitude of the original values
+    # This prevents large raw SV values from artificially tanking the score.
+    sv_score = np.exp(-norm(sv1 - sv2) / norm(sv1))
 
-    # Average cosine similarity of loading vectors
-    cos_score = np.mean(cosines)
+    # 2-C-2: Cosine Score: Use the MINIMUM instead of the MEAN. 
+    # This ensures that if even ONE PC flips or drifts, the health score reflects it.
+    cos_score = np.min(cosines) 
 
-    # Average correlation of sample coordinates
+    # 2-C-3: Coordinate Score: Keep the mean correlation for embedding stability.
     coord_score = np.mean(coord_corrs)
 
-    # Penalize large subspace rotations
-    angle_score = np.exp(-np.radians(angles_deg).mean())
+    # 2-C-4: Angle Score: Normalize by 90 degrees (the max possible tilt).
+    # This makes the "tilt" penalty linear and more intuitive.
+    angle_score = 1 - (angles_deg.max() / 90.0)
 
-    # Unified stability index
-    composite_score = np.mean([sv_score, cos_score, coord_score, angle_score])
+    # 2-C-5: Final Unified Index: Using Geometric Mean makes the score "stricter"
+    # (Formula: nth root of the product of n scores)
+    composite_score = (sv_score * cos_score * coord_score * angle_score) ** (1/4)
 
     # -------------------------------------------------
     # 2-D: Print a formatted summary of stability metrics and optionally render a diagnostic dashboard
@@ -577,7 +587,7 @@ def compare_pca_stability(
     width, lbl_w, val_w = 65, 37, 12
     print("\n" + "=" * width)
     print(f"{'🔍 PCA STABILITY CROSS-CHECK':^{width}}")
-    print(f"{f'(ε={eps1} vs ε={eps2})':^{width}}")
+    print(f"{f'(ε={eps1:.6f} vs ε={eps2:.6f})':^{width}}")
     print(f"{f'Number of Principal Components: {n_components}':^{width}}")
     print("-" * width)
     print(f"⚖️  {'SV Magnitude Shift (L2)':<{lbl_w}} : {sv_diff_norm:>{val_w}.4f}")
@@ -691,7 +701,7 @@ def compare_pca_stability(
         ax2.set_ylabel("Degrees (°)")
         ax2.set_ylim(0, max_v * 1.8)
 
-        # Panel C — Contribution matrix
+        # Panel C - Contribution matrix
         ax3 = fig.add_subplot(gs[0, 2])
         U, _, _ = np.linalg.svd(L1 @ L2.T)
         contrib_norm = np.abs(U.T) / np.abs(U.T).sum(axis=0, keepdims=True)
@@ -735,7 +745,13 @@ def compare_pca_stability(
         
         plt.show()
 
-    return {"composite_score": composite_score, "angles": angles_deg, "cosines": cosines}
+    return {
+        "composite_score": composite_score,
+        "angles": angles_deg,
+        "cosines": cosines,
+        "coord_corrs": coord_corrs,
+        "sv_diff_norm": sv_diff_norm,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -750,15 +766,15 @@ def pca_sensitivity_plot(
     image_save: str = None
 ):
     """
-    Visualize PCA sensitivity across multiple epsilon values.
+    Visualize PCA sensitivity across exactly two epsilon values.
 
     This function produces a two‑panel diagnostic figure comparing:
-      • Singular value spectra across epsilon values
-      • Cumulative variance explained across epsilon values
+      - Singular value spectra across epsilon values
+      - Cumulative variance explained across epsilon values
 
     Component selection:
-      • If `k_components` is provided, it is used directly.
-      • Otherwise, the smallest k satisfying cumulative variance ≥ `threshold_var`
+      - If `k_components` is provided, it is used directly.
+      - Otherwise, the smallest k satisfying cumulative variance ≥ `threshold_var`
         (default 0.80) is selected.
 
     The chosen k is highlighted on both panels with vertical and horizontal
@@ -767,7 +783,7 @@ def pca_sensitivity_plot(
     Parameters
     ----------
     results : dict
-        Mapping: epsilon → {"singular_values": array, "variance_ratio": array}
+        Mapping: epsilon -> {"singular_values": array, "variance_ratio": array}
 
     title : str, default "PCA Noise Sensitivity Analysis"
         Main title for the figure.
@@ -785,10 +801,9 @@ def pca_sensitivity_plot(
     image_save : str, optional
         Filename for saving the figure.
 
-    Returns
-    -------
-    None
-        Displays the figure and optionally saves it.
+    results : dict
+        Mapping: epsilon -> {"singular_values": array, "variance_ratio": array}
+        Must contain exactly two epsilon values for comparison.
     """
     # -------------------------------------------------
     # Step 3-1: Set up the figure
@@ -798,6 +813,10 @@ def pca_sensitivity_plot(
     fig, axes = plt.subplots(1, 2, figsize=(14, 7.5))
 
     epsilons = sorted(results.keys())
+    if len(epsilons) != 2:
+        raise ValueError(
+            f"pca_sensitivity_plot requires exactly 2 epsilon values, got {len(epsilons)}"
+    )
     palette = ["#2d3436", "#d85a30"]
 
     # Baseline epsilon for determining k
@@ -807,22 +826,42 @@ def pca_sensitivity_plot(
     cum_var_first = np.cumsum(v_ratios_first)
 
     # -------------------------------------------------
-    # Step 3-2: Determine target number of components
+    # Step 3-2: Determine target k and capture values
     # -------------------------------------------------
     if k_components is not None:
         target_k = int(k_components)
     else:
         target_k = int(np.argmax(cum_var_first >= threshold_var) + 1)
 
+    # DEFINITIONS NEEDED FOR THE PLOT LINES:
     var_at_k = cum_var_first[target_k - 1]
     k_singular_val = s_vals_first[target_k - 1]
 
     # -------------------------------------------------
-    # Step 3-3: Title and subtitle with variance captured at target k
+    # Step 3-3: Ultra-Tight Subtitle (Optimized)
     # -------------------------------------------------
-    subtitle = f"Variance Captured at k={target_k}: {var_at_k:.2f} ({var_at_k:.1%})"
-    fig.suptitle(title, fontsize=18, fontweight="bold", y=0.97)
-    fig.text(0.5, 0.92, subtitle, fontsize=12, color="#636e72", ha="center")
+    fig.suptitle(title, fontsize=18, fontweight="bold", y=0.98)
+
+    # 1. Grab raw values
+    v0, v1 = [np.cumsum(results[e]["variance_ratio"])[target_k-1] for e in epsilons]
+    s0, s1 = [results[e]["singular_values"][target_k-1] for e in epsilons]
+
+    # 2. Anchors and Data mapping
+    x_anchor = 0.52 
+    # Create a list of tuples: (Label, Value_Eps0, Value_Eps1, Y_Position, Format)
+    rows = [
+        (f"Cumulative Variance at k={target_k}: ", v0, v1, 0.915, ".1%"),
+        (f"Singular Value at k={target_k}: ", s0, s1, 0.885, ".2f")
+    ]
+
+    for label, val0, val1, y, fmt in rows:
+        # Prefix (Right-aligned)
+        fig.text(x_anchor, y, label, ha='right', fontsize=10, color="#636e72")
+        
+        # Values and "vs" (Left/Center-aligned)
+        fig.text(x_anchor + 0.01, y, f"{val0:{fmt}}", ha='left', fontsize=10, fontweight='bold', color=palette[0])
+        fig.text(x_anchor + 0.06, y, "vs", ha='center', fontsize=9, fontweight='bold', color="#2d3436")
+        fig.text(x_anchor + 0.08, y, f"{val1:{fmt}}", ha='left', fontsize=10, fontweight='bold', color=palette[1])
 
     # -------------------------------------------------
     # Step 3-4: Plot singular values + cumulative variance
@@ -837,7 +876,7 @@ def pca_sensitivity_plot(
             y=s_vals,
             marker="o",
             color=palette[i],
-            label=f"ε = {eps}",
+            label=fr" = {eps:.6f}",
             ax=axes[0]
         )
 
@@ -847,7 +886,7 @@ def pca_sensitivity_plot(
             y=np.cumsum(ratios),
             marker="o",
             color=palette[i],
-            label=f"ε = {eps}",
+            label=f"ε = {eps:.6f}",
             ax=axes[1]
         )
 
@@ -884,9 +923,12 @@ def pca_sensitivity_plot(
                 tick.set_fontweight("bold")
                 tick.set_color("#d85a30")
 
+        y_min, y_max = ax.get_ylim()
+        tol = (y_max - y_min) * 0.02  # 2% of axis range
+
         for tick in ax.get_yticklabels():
             try:
-                if abs(float(tick.get_text().replace('−', '-')) - target_val) < 0.01:
+                if abs(float(tick.get_text().replace('−', '-')) - target_val) < tol:
                     tick.set_fontweight("bold")
                     tick.set_color("#d85a30")
             except ValueError:
@@ -899,14 +941,16 @@ def pca_sensitivity_plot(
     for i, ax in enumerate(axes):
         ax.set_title(titles[i], fontweight="semibold", pad=20)
         ax.yaxis.grid(True, linestyle="--", alpha=0.3)
-        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=2, frameon=False)
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False)
 
     sns.despine(trim=True)
-    plt.tight_layout(rect=[0, 0.05, 1, 0.92])
+    
+    # Adjust layout to prevent overlap and ensure the subtitle and annotations are clear
+    plt.tight_layout(rect=[0, 0.03, 1, 0.90]) 
 
     # Save figure
     if image_save and image_path:
-        fig.savefig(image_path + image_save, dpi=300, bbox_inches='tight')
+        fig.savefig(os.path.join(image_path, image_save), dpi=300, bbox_inches='tight')
 
     plt.show()
 
@@ -938,7 +982,7 @@ def plot_aitchison(
     Parameters
     ----------
     clr_data : Mapping[float, pd.DataFrame]
-        Dictionary mapping epsilon → CLR-transformed DataFrame.
+        Dictionary mapping epsilon -> CLR-transformed DataFrame.
     chosen_eps : float or None
         Primary epsilon to highlight with a vertical line and annotation.
     compare_eps : float or None
@@ -953,8 +997,6 @@ def plot_aitchison(
     dict
         A dictionary containing:
         - "figure": the matplotlib Figure
-        - "ax1": left y-axis (total variance)
-        - "ax2": right y-axis (PC1 ratio)
     """
     # Color palette for the plot elements
     c_blue, c_coral, c_green, c_gray = "#185FA5", "#D85A30", "#3B6D11", "#666666"
@@ -999,7 +1041,7 @@ def plot_aitchison(
     if chosen_eps is not None:
         v_line = ax1.axvline(
             chosen_eps, color=c_green, ls=":", lw=1.8,
-            label=rf"Chosen $\epsilon$ ({chosen_eps:.2g})"
+            label=rf"Chosen $\epsilon$ ({chosen_eps:.6f})"
         )
         handles.append(v_line)
         # Note: The annotation for the chosen epsilon is designed to be prominent and informative,
@@ -1020,7 +1062,7 @@ def plot_aitchison(
     if compare_eps is not None:
         c_line = ax1.axvline(
             compare_eps, color=c_gray, ls="--", lw=1.2, alpha=0.6,
-            label=rf"Alt $\epsilon$ ({compare_eps:.2g})"
+            label=rf"Alt $\epsilon$ ({compare_eps:.6f})"
         )
         handles.append(c_line)
         # Note: The annotation for the alternative epsilon is intentionally less prominent 
@@ -1070,8 +1112,8 @@ def _add_callout(ax, profile, eps, offset, prefix, ha):
 
     # Construct the label text with LaTeX formatting and key metrics
     label_text = (
-        f"{prefix}: {snapped_eps:.2g}" + "\n"
-        f"Total Var: {row.total_variance:.3g}\n"
+        f"{prefix}: {snapped_eps:.6f}" + "\n"
+        f"Total Var: {row.total_variance:.3f}\n"
         f"PC1 Ratio: {row.pc1_ratio:.1%}"
     )
 
@@ -1251,6 +1293,7 @@ def compute_aitchison_profile(clr_data):
     clr_data : dict
         A mapping {eps: DataFrame} where each value is a pandas DataFrame
         containing CLR-transformed data for that epsilon threshold.
+        Same output files from sweep_epsilon_grid() `clr_dict` can be used here.
 
     Returns
     -------
@@ -1309,12 +1352,20 @@ def plot_pc1_loading_stability(
         Figure size.
 
     Returns
-  -
+    -------
     dict
         {
             "figure": matplotlib Figure,
             "data": DataFrame of aligned PC1 loadings
         }
+
+    Notes
+    -----
+    The figure includes a caption positioned below the axes bounding box.
+    When saving, use `bbox_inches='tight'` to ensure the caption is included:
+
+        result = plot_pc1_loading_stability(...)
+        result["figure"].savefig("path.png", bbox_inches="tight")
     """
     # ------------------------------------------------------------------
     # 5-1. Compute PC1 loadings for top-K features across all epsilons
@@ -1322,7 +1373,9 @@ def plot_pc1_loading_stability(
     df_loadings = _compute_pc1_stability(clr_data, chosen_eps, top_k=top_k)
     eps_values  = sorted(clr_data)
 
+    # ------------------------------------------------------------------
     # 5-2. Setup figure and color palette
+    # ------------------------------------------------------------------
     sns.set_style("white")
     fig, ax = plt.subplots(figsize=figsize, dpi=100)
 
@@ -1349,31 +1402,25 @@ def plot_pc1_loading_stability(
     # 5-4. Highlight chosen epsilon with a vertical line and add to legend
     # ------------------------------------------------------------------
     if chosen_eps is not None:
-        # Vertical line
         ax.axvline(
             chosen_eps, linestyle="--", color="#2d3436",
             linewidth=1.2, alpha=0.6
         )
-
-        # Shaded region around chosen epsilon for emphasis
         ax.axvspan(
             chosen_eps * 0.9, chosen_eps * 1.1,
             color="gray", alpha=0.05
         )
-
-        # Legend proxy for chosen epsilon
         eps_proxy = Line2D(
             [0], [0],
             color="#2d3436",
             linestyle="--",
             linewidth=1.2,
-            label=f"Target ε: {chosen_eps:.2g}"
+            label=f"Target ε: {chosen_eps:.6f}"
         )
-        # Append to existing legend handles
-        handles, labels = ax.get_legend_handles_labels()
+        handles, _ = ax.get_legend_handles_labels()
         handles.append(eps_proxy)
     else:
-        handles, labels = ax.get_legend_handles_labels()
+        handles, _ = ax.get_legend_handles_labels()
 
     # ------------------------------------------------------------------
     # 5-5. Formatting and styling
@@ -1382,7 +1429,7 @@ def plot_pc1_loading_stability(
     ax.set_xlabel("Epsilon (ε) Pseudocount", fontsize=14, fontweight="bold", labelpad=10)
     ax.set_ylabel("PC1 Loading Value", fontsize=14, fontweight="bold", labelpad=10)
     ax.set_title(
-        f"Stability of Top {top_k} High-Variance Features",
+        f"Stability of Top {len(df_loadings.columns)} High-Variance Features",
         fontsize=16, loc="left", pad=20, fontweight="bold"
     )
     # Grid and spines
@@ -1405,16 +1452,14 @@ def plot_pc1_loading_stability(
         fontsize=10,
         title="Features & Settings"
     )
-    # Style the legend title if it exists
-    if leg:
-        plt.setp(leg.get_title(), fontsize=12, fontweight="bold")
+    plt.setp(leg.get_title(), fontsize=12, fontweight="bold")
 
     # ------------------------------------------------------------------
     # 5-7. Informative caption about the feature selection method
     # ------------------------------------------------------------------
     fig.text(
         0.05, -0.05,
-        f"Features selected by variance at ε={chosen_eps if chosen_eps else eps_values[0]}.",
+        f"Features selected by variance at ε={chosen_eps if chosen_eps is not None else eps_values[0]:.6f}.",
         fontsize=9, color="#636e72", style="italic"
     )
     # Final layout adjustments
@@ -1537,7 +1582,7 @@ def _compute_pc1_stability(
 # ---------------------------------------------------------------------------
 def plot_crime_counts(
     esp_results: dict,
-    column: str = None,
+    column: str,
     figsize: Tuple[int, int] = (12, 10),
     bins: int = 35,
     show: bool = True,
@@ -1578,18 +1623,22 @@ def plot_crime_counts(
 
     Returns
     -------
-    dict
-        {
-            "series": pd.Series of monthly counts (index reset),
-            "fig": matplotlib Figure object
-        }
+        dict
+            {
+                "series": pd.Series of monthly counts indexed 0..N-1.
+                        The original date index is used only for x-axis
+                        tick labels and is not preserved in the returned series.,
+                "fig": matplotlib Figure object
+            }
     """
     # ------------------------------------------------------------
     # Robust Data Extraction
     # ------------------------------------------------------------
     pivot = esp_results.get("pivot_data")
-    if pivot is None or column not in pivot:
-        raise KeyError(f"Data or column '{column}' not found.")
+    if not isinstance(pivot, pd.DataFrame):
+        raise TypeError("`esp_results['pivot_data']` must be a pandas DataFrame.")
+    if column not in pivot.columns:
+        raise KeyError(f"Column '{column}' not found in pivot_data.")
 
     # Extract the time series and preserve original date index
     series_raw = pd.Series(pivot[column])
@@ -1739,7 +1788,8 @@ def plot_structural_break(
     za_stat: Optional[float] = None,
     za_p_adj: Optional[float] = None,
     era_boundaries: Optional[Dict[str, str]] = None,
-    save_path: Optional[str] = None,
+    image_path: Optional[str] = None,
+    image_name: Optional[str] = None,
     verbose: bool = True
 ) -> None:
     """
@@ -1777,11 +1827,18 @@ def plot_structural_break(
         Adjusted p-value for the ZA test. If missing or NaN, the break is
         treated as statistically unreliable.
     era_boundaries : dict, optional
-        Mapping of era labels → boundary dates. Used to draw background shading.
+        Mapping of era labels → boundary dates. Must contain exactly 2 entries,
+        defining the boundaries between 3 eras (e.g., Pre-COVID, COVID, Post-COVID).
+        Used to draw background shading.
         Example:
-            {"pre": "2020-03", "covid": "2021-06"}
-    save_path : str, optional
-        If provided, saves the figure to this path.
+            {"pre": "2020-03", "covid": "2023-01"}
+    image_path : str, optional
+        Directory path prefix for the saved figure. Concatenated directly with
+        `image_name`, so should end with the appropriate path separator.
+    image_name : str, optional
+        Filename for the saved figure. Both `image_path` and `image_name` must
+        be set for saving to occur.
+
     verbose : bool, default True
         Whether to print a terminal summary of segment statistics.
 
@@ -1790,14 +1847,30 @@ def plot_structural_break(
     None
         The function displays the figure and optionally saves it.
     """
-    import matplotlib as mpl
+    # check inputs and provide informative error messages
+    if category not in clr_df.columns:
+        raise KeyError(
+            f"Column '{category}' not found in clr_df. "
+            f"Available: {list(clr_df.columns)[:5]}..."
+        )
+    try:
+        break_dt = pd.Timestamp(break_date)
+    except (ValueError, TypeError) as e:
+        raise ValueError(f"Invalid break_date '{break_date}': {e}")
+    
+    # Check era boundaries if provided
+    if era_boundaries is not None and len(era_boundaries) != 2:
+        raise ValueError(
+            f"era_boundaries must contain exactly 2 entries (defining 3 eras), "
+            f"got {len(era_boundaries)}"
+        )
+
     mpl.rcParams['font.family'] = 'DejaVu Sans'
     mpl.rcParams['font.sans-serif'] = ['DejaVu Sans']
     # ------------------------------------------------------------
     # 7-1. DATA PREPARATION
     # ------------------------------------------------------------
     series = clr_df[category]
-    break_dt = pd.Timestamp(break_date)
 
     # Split into pre- and post-break segments
     pre_full = series[:break_dt]
@@ -1940,11 +2013,11 @@ def plot_structural_break(
     # ------------------------------------------------------------
     # 7-3C. DISTRIBUTION PANEL
     # ------------------------------------------------------------
-    sns.histplot(pre_full, ax=ax_dist, color="#0EA5E9", alpha=0.5, stat="density")
-    sns.kdeplot(pre_full, ax=ax_dist, color="#0369A1", linewidth=2.0, label="Pre-Break Dist")
+    sns.histplot(pre_full, ax=ax_dist, color="#064E3B", alpha=0.3, stat="density")
+    sns.kdeplot(pre_full, ax=ax_dist, color="#064E3B", linewidth=2.0, label="Pre-Break Dist")
 
-    sns.histplot(post_full, ax=ax_dist, color="#F59E0B", alpha=0.5, stat="density")
-    sns.kdeplot(post_full, ax=ax_dist, color="#B45309", linewidth=2.0, label="Post-Break Dist")
+    sns.histplot(post_full, ax=ax_dist, color="#7F1D1D", alpha=0.3, stat="density")
+    sns.kdeplot(post_full, ax=ax_dist, color="#7F1D1D", linewidth=2.0, label="Post-Break Dist")
 
     ax_dist.set_xlabel("CLR VALUE", fontsize=10, fontweight="bold")
     ax_dist.set_ylabel("DENSITY", fontsize=10, fontweight="bold")
@@ -1970,6 +2043,10 @@ def plot_structural_break(
     )
 
     plt.subplots_adjust(top=0.92, bottom=0.08, right=0.82)
+
+    if image_name and image_path:
+        fig.savefig(os.path.join(image_path, image_name), dpi=300, bbox_inches='tight')
+
     plt.show()
 
 
@@ -1978,12 +2055,56 @@ def plot_structural_break(
 # ---------------------------------------------------------------------------
 def plot_era_heatmaps(data_dict, stat_type='mean', image_path=None, image_name=None, verbose=False):
     """
-    Plot era-level CLR heatmaps and regime-shift deltas.
+        Plot era-level CLR heatmaps and regime-shift deltas in a four-panel layout.
+
+        The figure includes:
+        1. **Per-Era Panel** — CLR statistics across the three eras
+        (Pre-COVID, COVID, Post-COVID)
+        2. **Pre → COVID Delta Panel** — Shift between the first two eras
+        3. **COVID → Post Delta Panel** — Shift between the last two eras
+        4. **Pre → Post Delta Panel** — Net shift across the full period
+
+        Crime categories are sorted by the magnitude of the initial COVID
+        disruption (|COVID − Pre-COVID|) for visual prominence.
+
+        Parameters
+        ----------
+        data_dict : dict
+            Must contain:
+            - 'era_means' or 'era_stds' (selected by `stat_type`): DataFrame indexed
+            by crime category with era-level statistics in columns. Columns must
+            include 'Pre-COVID', 'COVID', 'Post-COVID' and the three pairwise
+            delta columns ('COVID_minus_Pre-COVID', etc.).
+            - 'era_date_ranges' (optional): dict mapping era names to (start, end)
+            date pairs. Used for the figure title.
+        stat_type : {'mean', 'std'}, default 'mean'
+            Which statistic to plot. Selects `era_means` or `era_stds` from
+            `data_dict` and labels the figure accordingly.
+        image_path : str, optional
+            Directory path prefix for the saved figure. Concatenated directly with
+            `image_name`, so should end with the appropriate path separator.
+        image_name : str, optional
+            Filename stem for the saved figure. The final filename is
+            f"{image_name}_{stat_type}.png". Both `image_path` and `image_name`
+            must be set for saving to occur.
+        verbose : bool, default False
+            Whether to print the sorted DataFrame to stdout after plotting.
+
+        Returns
+        -------
+        None
+            Displays the figure and optionally saves it.
     """
     # ------------------------------------------------------------
     # 8-1: Data validation and preparation
     # ------------------------------------------------------------
-    is_mean = stat_type.lower() == 'mean'
+    stat_type_lower = stat_type.lower()
+    if stat_type_lower not in ('mean', 'std'):
+        raise ValueError(
+            f"stat_type must be 'mean' or 'std', got '{stat_type}'"
+        )
+
+    is_mean = stat_type_lower == 'mean'
     df_key = 'era_means' if is_mean else 'era_stds'
     
     # Robust check for required DataFrame in data_dict
@@ -2068,7 +2189,8 @@ def plot_era_heatmaps(data_dict, stat_type='mean', image_path=None, image_name=N
 
     # Save the figure if path and name are provided
     if image_path and image_name:
-        plt.savefig(f"{image_path}/{image_name}_{stat_type}.png", dpi=300, bbox_inches='tight')
+        filename = f"{image_name}_{stat_type}.png"
+        plt.savefig(os.path.join(image_path, filename), dpi=300, bbox_inches='tight')
 
     plt.show()
 

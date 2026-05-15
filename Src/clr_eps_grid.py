@@ -1,16 +1,14 @@
-import warnings
 import numpy as np
 import pandas as pd
-from typing import Sequence, Dict, Any, Tuple, Iterable
+from typing import  Any, Tuple, Iterable
 import clr_config as cfg
 import matplotlib.pyplot as plt
 from scipy.stats import spearmanr, kendalltau
 
 # ----------------------------------------------------------------------------
-# Confgiguration parameters for clr_eps_grid_search.py
+# Configuration parameters for clr_eps_grid_search.py
 # ----------------------------------------------------------------------------
-# Confgiguration parameters for clr_eps_grid_search.py
-_N_PER_DECADE_N_PER_DECADE  = cfg.config_grid["_N_PER_DECADE"]
+_N_PER_DECADE               = cfg.config_grid["_N_PER_DECADE"]
 _INCLUDE_FIXED              = cfg.config_grid["_INCLUDE_FIXED"]
 _MIN_MULTIPLIER_CANDIDATES  = cfg.config_grid["_MIN_MULTIPLIER_CANDIDATES"]
 _Q_LOW                      = cfg.config_grid["_Q_LOW"]
@@ -22,7 +20,7 @@ _GROUP_KEY                  = cfg.config_agg["_GROUP_KEY"]
 _COUNTER_KEY                = cfg.config_agg["_COUNTER_KEY"]
 
 # ---------------------------------------------------------------------------
-# Helper function 1-A: Pviot Table for building the eps grid
+# Helper function 1-A: Pivot Table for building the eps grid
 # ---------------------------------------------------------------------------
 def _pivot(data_df: pd.DataFrame, index: str = _DATE_KEY,
            column: str = _GROUP_KEY,
@@ -48,7 +46,8 @@ def _pivot(data_df: pd.DataFrame, index: str = _DATE_KEY,
 
 
 # ---------------------------------------------------------------------------
-# Helper function 1-B: Extract positive values for anchor generation
+# Helper function 1-B: Extract positive values for anchor generation 
+#                      (build_eps_grid)
 # ---------------------------------------------------------------------------
 def _extract_positive(pivot: pd.DataFrame) -> np.ndarray:
     """
@@ -79,528 +78,155 @@ def _extract_positive(pivot: pd.DataFrame) -> np.ndarray:
     vals = pivot.values
     return vals[vals > 0]
 
-# ---------------------------------------------------------------------------
-# Helper function 1-C: Validate fixed grid values
-# ---------------------------------------------------------------------------
-def _validate_fixed(include_fixed: Sequence[float], floor: float) -> np.ndarray:
-    """
-    Validate and filter a user‑supplied fixed grid of positive values.
-
-    Ensures that all fixed grid points exceed the specified minimum
-    `floor` value. This is required for log‑ratio and CLR‑based
-    transformations, which operate only on strictly positive values.
-
-    Parameters
-    ----------
-    include_fixed : Sequence[float]
-        User‑provided list or sequence of fixed grid values.
-
-    floor : float
-        Minimum allowable value. Only entries strictly greater than
-        this threshold are retained.
-
-    Returns
-    -------
-    np.ndarray
-        Array of validated fixed values, all strictly above `floor`.
-
-    Raises
-    ------
-    ValueError
-        If no values exceed the floor threshold.
-    """
-    # -------------------------------------------------
-    # A — Filter fixed grid values above the floor
-    #     CLR/log transforms require strictly positive
-    #     values. This enforces that all user‑supplied
-    #     fixed points exceed the minimum threshold.
-    # -------------------------------------------------
-    fixed = np.array([f for f in include_fixed if f > floor])
-
-    # -------------------------------------------------
-    # B — Ensure at least one valid fixed point exists
-    #     Without a positive fixed grid, downstream
-    #     transformations cannot proceed safely.
-    # -------------------------------------------------
-    if fixed.size == 0:
-        raise ValueError("include_fixed contains no values above floor.")
-
-    return fixed
-
-# ---------------------------------------------------------------------------
-# Helper function 1-D: Data‑driven anchor calculations
-# ---------------------------------------------------------------------------
-def _min_val(pos: np.ndarray) -> float:
-    return float(pos.min())
-
-def _q_low(pos: np.ndarray, q: float) -> float:
-    return float(np.quantile(pos, q))
-
-def _geom_mean(pos: np.ndarray) -> float:
-    """Calculates geometric mean via log-space to handle varied scales."""
-    return float(np.exp(np.log(pos).mean()))
-
-def _median(pos: np.ndarray) -> float:
-    return float(np.median(pos))
-
-# ---------------------------------------------------------------------------
-# Helper function 1-E: Generate anchors based on data distribution
-# ---------------------------------------------------------------------------
-def _multiplier_anchors(pos: np.ndarray, q: float, multipliers: np.ndarray) -> np.ndarray:
-    """Generates anchors at specific fractions of the minimum and lower quantile."""
-    base = np.array([_min_val(pos), _q_low(pos, q)])
-    return (base[:, None] * multipliers).flatten()
-
-# ---------------------------------------------------------------------------
-# Helper Function 1-F: Generate anchors based on geometric mean
-# ---------------------------------------------------------------------------
-def _geom_anchors(pos: np.ndarray) -> np.ndarray:
-    """Generates anchors at 1% and 10% of the geometric mean."""
-    g = _geom_mean(pos)
-    return np.array([g * 0.01, g * 0.1])
-
-# ---------------------------------------------------------------------------
-# Helper Function 1-G: Generate anchors based on median
-# ---------------------------------------------------------------------------
-def _median_anchors(pos: np.ndarray) -> np.ndarray:
-    """Generates anchors at 0.1% and 1% of the median."""
-    m = _median(pos)
-    return np.array([m * 1e-3, m * 1e-2])
-
-# ---------------------------------------------------------------------------
-# Helper Function 1-H: Aggregate and clip anchors to the floor
-# ---------------------------------------------------------------------------
-def _build_anchors(
-    pos: np.ndarray,
-    q_low: float,
-    multipliers: np.ndarray,
-    floor: float,
-) -> np.ndarray:
-    """
-    Construct a unified set of data‑driven anchor points.
-
-    Aggregates multiple anchor families—multiplier‑based anchors,
-    geometric anchors, and median‑based anchors—to create a grid that
-    adapts to the empirical distribution of the positive data. The
-    resulting anchors are clipped to a minimum `floor` value to ensure
-    log‑safety and numerical stability.
-
-    Parameters
-    ----------
-    pos : np.ndarray
-        Array of strictly positive values extracted from the pivot matrix.
-
-    q_low : float
-        Lower quantile used by the multiplier‑anchor generator.
-
-    multipliers : np.ndarray
-        Multiplicative factors applied to the quantile anchor.
-
-    floor : float
-        Minimum allowable anchor value. All anchors are clipped to be
-        strictly above this threshold.
-
-    Returns
-    -------
-    np.ndarray
-        A 1‑D array of aggregated anchor points, all >= floor.
-    """
-    # -------------------------------------------------
-    # A — Generate anchor families
-    #     Each anchor type captures a different aspect
-    #     of the data distribution:
-    #       • multiplier anchors → scale‑adaptive
-    #       • geometric anchors  → multiplicative structure
-    #       • median anchors     → central tendency
-    # -------------------------------------------------
-    parts = [
-        _multiplier_anchors(pos, q_low, multipliers),
-        _geom_anchors(pos),
-        _median_anchors(pos),
-    ]
-
-    # -------------------------------------------------
-    # B — Concatenate and enforce minimum floor
-    #     Ensures all anchors remain strictly positive
-    #     and safe for log‑ratio transformations.
-    # -------------------------------------------------
-    return np.maximum(np.concatenate(parts), floor)
-
-# ---------------------------------------------------------------------------
-# Helper Function 1-I: Warn if anchors are out of range
-# ---------------------------------------------------------------------------
-def _warn_if_anchors_out_of_range(anchors: np.ndarray, lo: float, hi: float) -> None:
-    """
-    Warn the user when data‑driven anchors fall entirely outside the
-    fixed grid range.
-
-    Anchors outside the interval [lo, hi] have no influence on the final
-    grid construction. This warning alerts the user that the data‑driven
-    component of the anchor set will be ignored, which may indicate a
-    mismatch between the data scale and the chosen fixed range.
-
-    Parameters
-    ----------
-    anchors : np.ndarray
-        Array of data‑driven anchor points.
-
-    lo : float
-        Lower bound of the fixed grid range.
-
-    hi : float
-        Upper bound of the fixed grid range.
-
-    Returns
-    -------
-    None
-        Emits a UserWarning if all anchors lie outside [lo, hi].
-    """
-    # -------------------------------------------------
-    # A — Check whether any anchors fall within the
-    #     fixed grid range. If none do, the data‑driven
-    #     anchors will have zero influence on the grid.
-    # -------------------------------------------------
-    if not np.any((anchors >= lo) & (anchors <= hi)):
-
-        # -------------------------------------------------
-        # B — Emit a warning to alert the user that the
-        #     anchor set is effectively ignored due to
-        #     being outside the fixed range.
-        # -------------------------------------------------
-        warnings.warn(
-            f"All {len(anchors)} data-driven anchors fall outside fixed range "
-            f"[{lo:.2e}, {hi:.2e}] and will have no effect on the grid.",
-            UserWarning,
-            stacklevel=3,
-        )
-
-# ---------------------------------------------------------------------------
-# Helper Function 1-J: Construct a logarithmic backbone grid based on anchors and fixed range
-# ---------------------------------------------------------------------------
-def _make_log_grid(anchors: np.ndarray, lo: float, hi: float, n_per_decade: int) -> np.ndarray:
-    """
-    Construct the logarithmic backbone of the grid.
-
-    Builds a log‑spaced sequence between a data‑driven lower bound and
-    the fixed upper bound. The lower bound is chosen as the smallest
-    anchor clipped into the valid range [lo, hi]. The number of points
-    is proportional to the number of decades spanned, scaled by
-    `n_per_decade`, ensuring consistent resolution across magnitudes.
-
-    Parameters
-    ----------
-    anchors : np.ndarray
-        Array of data‑driven anchor points.
-
-    lo : float
-        Minimum allowable grid value.
-
-    hi : float
-        Maximum allowable grid value.
-
-    n_per_decade : int
-        Number of grid points to allocate per decade of log‑range.
-
-    Returns
-    -------
-    np.ndarray
-        A 1‑D log‑spaced array forming the base grid backbone.
-    """
-    # -------------------------------------------------
-    # A - Determine the starting point for the log grid
-    #     Use the smallest anchor, but clip it into the
-    #     valid range [lo, hi]. If clipping pushes it
-    #     above hi, fall back to lo.
-    # -------------------------------------------------
-    spacing_lo = np.clip(anchors.min(), lo, hi)
-    if spacing_lo >= hi:
-        spacing_lo = lo
-
-    # -------------------------------------------------
-    # B - Compute number of grid points based on the
-    #     number of decades spanned. Enforce a minimum
-    #     of 5 points for stability and smoothness.
-    # -------------------------------------------------
-    n_pts = max(5, int(np.ceil(np.log10(hi / spacing_lo) * n_per_decade)))
-
-    # -------------------------------------------------
-    # C - Generate the logarithmic backbone
-    # -------------------------------------------------
-    return np.logspace(np.log10(spacing_lo), np.log10(hi), num=n_pts)
-
-# ---------------------------------------------------------------------------
-# Helper Function 1-K: Merge and clip anchors, fixed values, and log grid
-# ---------------------------------------------------------------------------
-def _merge_and_clip(
-    anchors: np.ndarray,
-    fixed: np.ndarray,
-    log_grid: np.ndarray,
-    lo: float,
-    hi: float,
-) -> np.ndarray:
-    """
-    Merge all grid source points, remove duplicates, and enforce bounds.
-
-    Combines data‑driven anchors, user‑supplied fixed points, and the
-    logarithmic backbone into a single unified grid. Duplicate values are
-    removed, the result is sorted, and all points are clipped to the
-    inclusive range [lo, hi]. This produces the final candidate grid
-    before any optional refinement steps.
-
-    Parameters
-    ----------
-    anchors : np.ndarray
-        Data‑driven anchor points derived from the input distribution.
-
-    fixed : np.ndarray
-        User‑specified fixed grid points.
-
-    log_grid : np.ndarray
-        Logarithmic backbone generated from the data scale.
-
-    lo : float
-        Minimum allowable grid value.
-
-    hi : float
-        Maximum allowable grid value.
-
-    Returns
-    -------
-    np.ndarray
-        Sorted, deduplicated, range‑restricted grid values.
-    """
-    # -------------------------------------------------
-    # A — Merge all grid components
-    #     Concatenate anchors, fixed points, and the
-    #     log backbone into a single array.
-    # -------------------------------------------------
-    raw = np.unique(np.concatenate([anchors, fixed, log_grid]))
-
-    # -------------------------------------------------
-    # B — Enforce the allowable range [lo, hi]
-    #     Removes any points outside the final grid
-    #     bounds while preserving sorted order.
-    # -------------------------------------------------
-    return raw[(raw >= lo) & (raw <= hi)]
-
-# ---------------------------------------------------------------------------
-# Helper Function 1-L: Thin the grid to enforce a minimum relative step size
-# ---------------------------------------------------------------------------
-def _thin(grid: np.ndarray, hi: float, min_step: float) -> np.ndarray:
-    """
-    Enforce a minimum relative spacing between consecutive grid points.
-
-    Iteratively scans a sorted grid and retains only those points that
-    exceed a required relative increase (`min_step`) from the previously
-    accepted point. This reduces grid density while preserving numerical
-    stability for log‑ratio transforms. The upper bound `hi` is always
-    retained, even if it violates the step constraint.
-
-    Parameters
-    ----------
-    grid : np.ndarray
-        Sorted array of candidate grid points.
-
-    hi : float
-        Maximum allowable grid value. Always preserved.
-
-    min_step : float
-        Minimum required fractional increase between retained points
-        (e.g., 0.20 means each point must be at least 20% larger than
-        the previous one).
-
-    Returns
-    -------
-    np.ndarray
-        Thinned grid satisfying the minimum‑step constraint.
-    """
-    # -------------------------------------------------
-    # A — Initialize with the smallest grid point
-    #     This ensures the thinned grid always starts
-    #     at the lowest valid value.
-    # -------------------------------------------------
-    thinned = [grid[0]]
-
-    # -------------------------------------------------
-    # B — Iterate through remaining points and enforce
-    #     the minimum relative step constraint.
-    #     Always keep the upper bound `hi`.
-    # -------------------------------------------------
-    for val in grid[1:]:
-        # Relative increase from last accepted point
-        rel_diff = (val - thinned[-1]) / thinned[-1]
-
-        # Detect whether this point is effectively the hi boundary
-        at_hi = abs(val - hi) / hi < 1e-9
-
-        # Keep if it meets the spacing requirement or is the hi endpoint
-        if rel_diff >= min_step or at_hi:
-            thinned.append(val)
-
-    return np.array(thinned)
-
-# ---------------------------------------------------------------------------
-# Helper Function 1-M: Assemble the final grid by orchestrating all steps
-# ---------------------------------------------------------------------------
-def _assemble_and_thin(
-    anchors: np.ndarray,
-    fixed: np.ndarray,
-    n_per_decade: int,
-    min_step: float,
-) -> np.ndarray:
-    """
-    Construct the final grid by assembling all components and applying thinning.
-
-    This function orchestrates the full grid‑generation pipeline:
-    (A) determine the valid range from fixed points,
-    (B) warn if anchors fall outside that range,
-    (C) build a logarithmic backbone,
-    (D) merge and clip all candidate points,
-    (E) thin the merged grid to enforce minimum spacing.
-    """
-
-    # -------------------------------------------------
-    # A — Determine allowable grid range from fixed points
-    #     The fixed grid defines the hard bounds [lo, hi].
-    # -------------------------------------------------
-    lo, hi = fixed.min(), fixed.max()
-
-    # -------------------------------------------------
-    # B — Warn if data-driven anchors fall entirely outside
-    #     the fixed range, meaning they will not influence
-    #     the final grid.
-    # -------------------------------------------------
-    _warn_if_anchors_out_of_range(anchors, lo, hi)
-
-    # -------------------------------------------------
-    # C — Build the logarithmic backbone based on data scale
-    #     This provides smooth spacing across decades.
-    # -------------------------------------------------
-    log_grid = _make_log_grid(anchors, lo, hi, n_per_decade)
-
-    # -------------------------------------------------
-    # D — Merge anchors, fixed points, and log-grid candidates,
-    #     then clip to the allowable range.
-    # -------------------------------------------------
-    merged = _merge_and_clip(anchors, fixed, log_grid, lo, hi)
-
-    # -------------------------------------------------
-    # E — If merging yields no valid points (e.g., all anchors
-    #     out of range), fall back to the fixed grid. Otherwise,
-    #     thin the merged grid to enforce minimum relative spacing.
-    # -------------------------------------------------
-    if merged.size == 0:
-        return fixed
-
-    return _thin(merged, hi, min_step)
 
 # ---------------------------------------------------------------------------
 # 1. Main function: Build the adaptive epsilon grid
 # ---------------------------------------------------------------------------
 def build_eps_grid(
     data_df: pd.DataFrame,
-    n_per_decade: int = _N_PER_DECADE_N_PER_DECADE,
-    include_fixed: Sequence[float] = _INCLUDE_FIXED,
-    min_multiplier_candidates: Sequence[float] = _MIN_MULTIPLIER_CANDIDATES,
-    q_low: float = _Q_LOW,
+    n_per_decade: int = _N_PER_DECADE,
     floor: float = _FLOOR,
+    include_fixed: Iterable[float] = _INCLUDE_FIXED,
+    q_low: float = _Q_LOW,
     min_step: float = _MIN_STEP,
-) -> Dict:
+    multipliers: Iterable[float] = _MIN_MULTIPLIER_CANDIDATES,
+) -> dict:
     """
-    Build an adaptive logarithmic epsilon grid.
+    Construct a multi-zone epsilon grid for CLR zero-replacement sweeps.
 
-    Combines user‑specified fixed values with data‑driven anchors derived
-    from the distribution of the input data. The resulting grid adapts to
-    the empirical scale of the dataset while preserving stable fixed
-    bounds and enforcing minimum spacing.
+    This function builds a log-spaced epsilon grid tailored to the empirical
+    distribution of positive values in the compositional dataset. The grid is
+    divided into three conceptual zones:
 
-    The construction pipeline consists of:
-      A. Pivoting the long-format data into a TXK matrix
-      B. Validating fixed values and extracting strictly positive entries
-      C. Generating data-driven anchors from the positive distribution
-      D. Assembling anchors, fixed points, and log-grid candidates
-      E. Thinning the merged grid to enforce minimum relative spacing
+        - Zone 1 (Sub-Min / Anchor Bridge):
+          Very dense sampling between the global floor and the smallest
+          observed positive value. Captures the sensitive region where
+          epsilon interacts directly with structural zeros.
+
+        - Zone 2 (Data Transition Zone):
+          Dense sampling around the lower quantile of the positive data
+          distribution. Tracks the transition from zero-dominated to
+          data-dominated CLR behavior.
+
+        - Zone 3 (Plateau Monitoring Zone):
+          Coarser sampling at larger epsilons to detect flattening or
+          over-smoothing in CLR geometry.
+
+    The final grid merges:
+        - zone-specific log-spaced sequences,
+        - scaled data-driven multipliers,
+        - applies adaptive thinning (smaller step in sensitive regions),
+        - and then re-adds the fixed anchors unconditionally so they are
+          guaranteed to appear in the final grid.
+
+    Values are returned at full numerical precision. Rounding is the
+    responsibility of presentation code (display, plotting, write-up).
 
     Parameters
     ----------
     data_df : pd.DataFrame
-        Long-format crime-count data used to derive data-driven anchors.
-
+        Raw long-format dataset containing compositional counts.
     n_per_decade : int
-        Density of the logarithmic backbone (points per decade).
-
-    include_fixed : Sequence[float]
-        User-specified fixed grid values that define the allowable range.
-
-    min_multiplier_candidates : Sequence[float]
-        Multipliers applied to the lower quantile to generate anchors.
-
-    q_low : float
-        Lower quantile used for multiplier-based anchor generation.
-
+        Density of log-spaced samples per decade of epsilon.
     floor : float
-        Minimum allowable value for anchors and fixed points.
-
+        Global minimum epsilon floor (e.g., 1e-12).
+    include_fixed : Iterable[float]
+        Fixed epsilon anchors guaranteed to appear in the final grid.
+    q_low : float
+        Lower quantile (0-1) used to define the data-driven scale region.
     min_step : float
-        Minimum required fractional increase between adjacent grid points.
+        Minimum relative step used during thinning above d_scale.
+        Below d_scale, the gate is tightened to min_step / 2.
+    multipliers : Iterable[float]
+        Multipliers applied to the data scale to generate additional anchors.
 
     Returns
     -------
-    Dict
+    dict
         {
-            'eps_values': np.ndarray — final thinned epsilon grid,
-            'pivot_data': pd.DataFrame — TXK pivoted data matrix
+            'eps_values': np.ndarray of final epsilon grid (full precision),
+            'pivot_data': pivoted compositional matrix,
+            'meta': {
+                'data_min':   smallest positive value, or None if no positives,
+                'data_scale': lower-quantile scale, or None if no positives,
+                'grid_size':  number of epsilons in final grid,
+            }
         }
     """
-    # -------------------------------------------------
-    # A - Pivot long-format data into a TXK matrix
-    #     Required for extracting positive values and
-    #     computing distribution-aware anchors.
-    # -------------------------------------------------
+    # Materialize iterables once so we can take min/max and iterate freely.
+    fixed_anchors = sorted(set(float(v) for v in include_fixed))
+    mult_list = [float(v) for v in multipliers]
+
     pivot_data = _pivot(data_df)
+    pos = _extract_positive(pivot_data)
 
-    # -------------------------------------------------
-    # B - Validate fixed values and extract strictly
-    #     positive entries from the pivoted matrix.
-    #     If no positive values exist, fall back to
-    #     the fixed grid.
-    # -------------------------------------------------
-    fixed = _validate_fixed(include_fixed, floor)
-    pos   = _extract_positive(pivot_data)
-
+    # Degenerate case: no positive values to drive zone construction.
     if pos.size == 0:
-        return {'eps_values': np.sort(fixed), 'pivot_data': pivot_data}
+        eps_values = np.array(fixed_anchors, dtype=float)
+        return {
+            'eps_values': eps_values,
+            'pivot_data': pivot_data,
+            'meta': {
+                'data_min':   None,
+                'data_scale': None,
+                'grid_size':  len(eps_values),
+            },
+        }
+
+    # -----------------------------------------------
+    # 1-A: Statistical anchors: data-driven points
+    # ------------------------------------------------
+    d_min = float(np.nanmin(pos))
+    d_scale = float(np.percentile(pos, q_low * 100))
+    search_floor = min(d_min, fixed_anchors[0] if fixed_anchors else d_min, floor)
 
     # -------------------------------------------------
-    # C - Generate data-driven anchors using multiplier,
-    #     geometric, and median-based anchor families.
+    # 1-B: Zone construction: build dense log grids
     # -------------------------------------------------
-    anchors = _build_anchors(
-        pos,
-        q_low,
-        np.asarray(min_multiplier_candidates),
-        floor
-    )
+    decades_to_cover = np.log10(d_min) - np.log10(search_floor)
+    num_z1 = max(int(decades_to_cover * n_per_decade), 20)
+    # Zone 1 covers from the global floor up to the smallest positive value
+    z1 = np.logspace(np.log10(search_floor), np.log10(d_min), num=num_z1)
+
+    # Zone 2 focuses on the transition region around d_scale
+    z2 = np.logspace(np.log10(d_min), np.log10(d_scale * 10), num=max(n_per_decade, 20))
+
+    # Zone 3 monitors the plateau region up to the largest fixed anchor or 10.0, whichever is larger
+    z3_upper = max(max(fixed_anchors), 10.0) if fixed_anchors else 10.0
+    z3 = np.logspace(np.log10(d_scale * 10), np.log10(z3_upper), num=10)
 
     # -------------------------------------------------
-    # D - Assemble anchors, fixed points, and log-grid
-    #     candidates into a unified grid, then clip to
-    #     the allowable range.
+    # 1-C: Merge non-anchor sources and thin adaptively
     # -------------------------------------------------
-    eps_values = _assemble_and_thin(
-        anchors,
-        fixed,
-        n_per_decade,
-        min_step
-    )
+    multiplier_anchors = d_scale * np.array(mult_list)
+    combined = np.unique(np.concatenate([z1, z2, z3, multiplier_anchors]))
 
     # -------------------------------------------------
-    # E - Return both the final epsilon grid and the
-    #     pivoted data used to construct it.
+    # 1-D: Adaptive thinning: use a smaller step threshold 
+    #      below d_scale to preserve resolution in the 
+    #      sensitive region
+    # --------------------------------------------------
+    thinned = [combined[0]]
+    for val in combined[1:]:
+        dynamic_step = (min_step / 2.0) if val < d_scale else min_step
+        if (val - thinned[-1]) / thinned[-1] >= dynamic_step:
+            thinned.append(val)
+
     # -------------------------------------------------
+    # 1-E: Re-add fixed anchors unconditionally to ensure 
+    #      they are included in the final grid, even if 
+    #      they violate the thinning step
+    # -------------------------------------------------
+    final = np.unique(np.concatenate([np.array(thinned), np.array(fixed_anchors)]))
+
     return {
-        'eps_values': eps_values,
-        'pivot_data': pivot_data
+        'eps_values': final,
+        'pivot_data': pivot_data,
+        'meta': {
+            'data_min':   d_min,
+            'data_scale': d_scale,
+            'grid_size':  len(final),
+        },
     }
 
 
@@ -613,7 +239,7 @@ def sweep_epsilon_grid(
     large_clr_threshold: float = 10.0,
     plot: bool = True,
     auto_select: bool = False,
-    verbose: bool = True,
+    verbose: bool = False,
     kendall_threshold: float = 0.98,
     spearman_threshold: float = 0.999,
     near_zero_threshold: float | None = 1e-6,
@@ -637,7 +263,7 @@ def sweep_epsilon_grid(
         If True, generate and display diagnostics plot.
     auto_select : bool, default=False
         If True, apply 3-stage automated eps selection and populate meta["chosen_eps"].
-    verbose : bool, default=True
+    verbose : bool, default=False
         If True, print diagnostics_df to stdout.
     kendall_threshold : float, default=0.98
         Minimum Kendall tau for rank stability to satisfy constraint C2.
@@ -662,28 +288,45 @@ def sweep_epsilon_grid(
     - `diagnostics_df` is indexed by the evaluated `eps` values (float) and is sorted
       in ascending order.
     """
+    # -------------------------------------------------
+    # 2-A: Input validation and preprocessing
+    # -------------------------------------------------
     if pivot.shape[0] < 2:
         raise ValueError(
             f"pivot must have at least 2 rows to compute rank diagnostics; got shape {pivot.shape}"
         )
 
+    # ------------------------------------------------
+    # 2-B: Validate eps_grid values: must be positive and non-duplicating
+    # -------------------------------------------------
     eps_list = [float(e) for e in eps_grid]
     if any(e <= 0.0 for e in eps_list):
         raise ValueError("eps_grid contains non-positive values; all eps must be > 0")
 
-    # deduplicate while preserving sorted order
+    # -------------------------------------------------
+    # 2-C: Sort and deduplicate eps_grid to ensure consistent processing
+    # -------------------------------------------------
     eps_arr = np.array(sorted(set(eps_list)))
 
+    # --------------------------------------------------
+    # 2-D: Initialize diagnostics storage and compute dimensions
+    # ---------------------------------------------------
     T, K = pivot.shape
     n_zero_cells = int((pivot == 0).sum().sum())
     # baseline bool_mask of exact zeros before smoothing; used to measure contribution
     # of original zeros to CLR variance as eps grows.
     zero_bool_mask_pre = (pivot == 0).values
 
+    # ------------------------------------------------
+    # 2-E: Sweep over eps_grid and compute CLR + diagnostics
+    # ------------------------------------------------
     diagnostics: list[dict[str, Any]] = []
     clr_dict: dict[float, pd.DataFrame] = {}
     prev_clr = None
 
+    # ------------------------------------------------
+    # 2-F: For each eps, compute CLR and diagnostics
+    # ------------------------------------------------
     for eps in eps_arr:
         props = pivot + eps
         props = props.div(props.sum(axis=1), axis=0)
@@ -691,6 +334,7 @@ def sweep_epsilon_grid(
         clr = logp.sub(logp.mean(axis=1), axis=0)
         abs_clr = np.abs(clr.values)
 
+        # CLR variance contribution from original zeros vs total variance
         clr_var_total = float(np.var(abs_clr))
         clr_var_zeros = float(np.var(abs_clr[zero_bool_mask_pre])) if zero_bool_mask_pre.any() else 0.0
 
@@ -704,6 +348,7 @@ def sweep_epsilon_grid(
             pct_cells_near_zero = None
             clr_var_near_zero = None
 
+        # Compute rank diagnostics compared to previous eps (None for the first iteration)
         rank_diag = _compute_rank_diagnostics(clr, prev_clr)
         prev_clr = clr
 
@@ -723,60 +368,290 @@ def sweep_epsilon_grid(
                 "K": K,
             }
         )
-
+        # Store the CLR DataFrame for potential external use (e.g., plotting, further analysis)
         if near_zero_threshold is not None:
             diagnostics[-1]["pct_cells_near_zero"] = pct_cells_near_zero
             diagnostics[-1]["clr_var_near_zero"] = clr_var_near_zero
 
+        # Store CLR in the dictionary for potential external use (e.g., plotting, further analysis)
         clr_dict[eps] = clr
 
+    # Convert diagnostics list to DataFrame indexed by eps for easier analysis and plotting
     diagnostics_df = pd.DataFrame(diagnostics).set_index("eps")
 
-    # meta: always present; when auto_select is False it is minimal
+    # -------------------------------------------------
+    # 2-G: Optional automated eps selection based on diagnostics
+    # -------------------------------------------------
     if auto_select:
         chosen_eps, chosen_reason, chosen_status = select_eps(
             diagnostics_df, kendall_threshold, spearman_threshold
         )
-        
-        # Map plain status tags to descriptive display messages
-        status_messages = {
-            'optimal':      '🟢 Optimal stability — strict zero-artifact and rank-stability thresholds satisfied.',
-            'near_optimal': '🟡 Near-optimal stability — within additive tolerance of the best observed metrics.',
-            'elbow':        '🔵 Elbow-based selection — sharpest knee detected in distortion curve on log-eps axis.',
-            'fallback':     '🟠 Fallback selection — no plateau or elbow found; composite score across metrics used. Interpret with caution.',
+        # -------------------------------------------------
+        # Helper Function 2-H: Stage-specific criteria function to evaluate
+        # --------------------------------------------------
+        def _passes_criteria(row):
+            # All stages require pct_rows_large_clr == 0
+            if row.get("pct_rows_large_clr", 0) > 0:
+                return False
+            
+            k = row.get("rank_stability_kendall")
+            s = row.get("rank_stability_spearman")
+            if pd.isna(k) or pd.isna(s):
+                return False
+            
+            if chosen_status == "optimal":
+                # Stage 1 strict criteria
+                if row.get("pct_cells_near_zero", 0) > 1e-12:
+                    return False
+                if k < kendall_threshold or s < spearman_threshold:
+                    return False
+            elif chosen_status == "near_optimal":
+                # Stage 2 soft plateau criteria
+                min_zero = diagnostics_df['pct_cells_near_zero'].min()
+                max_k = diagnostics_df['rank_stability_kendall'].max()
+                max_s = diagnostics_df['rank_stability_spearman'].max()
+                if row.get("pct_cells_near_zero", 0) > min_zero + 0.005:
+                    return False
+                if k < max_k - 0.010 or s < max_s - 0.005:
+                    return False
+            else:
+                # Stage 3/4: use Stage 1 criteria as a baseline "passes core checks" indicator
+                if row.get("pct_cells_near_zero", 0) > 1e-12:
+                    return False
+                if k < kendall_threshold or s < spearman_threshold:
+                    return False
+            
+            return True
+
+        # -------------------------------------------------
+        # 2-H: Evaluate neighboring epsilons to determine 
+        #      if the chosen epsilon is at an edge or isolated
+        # --------------------------------------------------
+        pass_mask = diagnostics_df.apply(_passes_criteria, axis=1)
+        sorted_eps = list(diagnostics_df.index)
+        idx = sorted_eps.index(chosen_eps)
+        # Identify neighbors and their pass/fail status
+        neighbors = {
+            "low":  sorted_eps[idx - 1] if idx > 0 else None,
+            "high": sorted_eps[idx + 1] if idx < len(sorted_eps) - 1 else None
         }
-        
+        # Determine pass/fail/not_in_grid status for neighbors
+        stats = {k: ("pass" if (v and pass_mask.loc[v]) else "fail" if v else "not_in_grid") 
+                 for k, v in neighbors.items()}
+
+        # ------------------------------------------------
+        # 2-I: Classify the chosen epsilon's position in 
+        #      the grid based on neighbor statuses
+        # ------------------------------------------------
+        if stats["low"] in ("fail", "not_in_grid") and stats["high"] == "pass":
+            pos = "lower_edge"
+        elif stats["high"] in ("fail", "not_in_grid") and stats["low"] == "pass":
+            pos = "upper_edge"
+        elif stats["low"] == "pass" and stats["high"] == "pass":
+            pos = "interior"
+        else:
+            pos = "isolated"
+
+        # -------------------------------------------------
+        # 2-J: Generate a caveat message if the chosen 
+        #      epsilon is at an edge
+        # --------------------------------------------------
+        caveat = None
+        if pos == "lower_edge":
+            caveat = f"Selection ε={chosen_eps:g} is at the LOWER EDGE of stability. Neighbors below failed."
+        elif pos == "isolated":
+            caveat = f"Selection ε={chosen_eps:g} is ISOLATED. Nearby grid points are unstable."
+
+        # -------------------------------------------------
+        # 2-K: Compile meta information about the selection 
+        #      for reporting and plotting
+        # -------------------------------------------------
+        status_map = {
+            'optimal': '🟢 Optimal stability', 'near_optimal': '🟡 Near-optimal',
+            'elbow': '🔵 Elbow-based', 'fallback': '🟠 Fallback (Caution)'
+        }
+
+        # Meta Data Structure:
         meta = {
-            "auto_select":   True,
-            "chosen_eps":    chosen_eps,
-            "chosen_reason": chosen_reason,
-            "chosen_status": status_messages.get(chosen_status, chosen_status),
-            "chosen_tag":    chosen_status,   # keep the plain tag too for programmatic logic
-            "chosen_row":    diagnostics_df.loc[chosen_eps].to_dict(),
+            "auto_select": True,
+            "chosen_eps": chosen_eps,
+            "chosen_tag": chosen_status,
+            "chosen_status": status_map.get(chosen_status, chosen_status),
+            "grid_position": pos,
+            "boundary_caveat": caveat,
+            "grid_spacing_below_log10": float(np.log10(chosen_eps) - np.log10(neighbors["low"])) if neighbors["low"] else None,
+            "chosen_row": diagnostics_df.loc[chosen_eps].to_dict(),
+            "pass_mask": pass_mask.to_dict()
         }
     else:
-        meta = {
-            "auto_select":   False,
-            "chosen_eps":    None,
-            "chosen_reason": None,
-            "chosen_status": None,
-            "chosen_tag":    None,
-            "chosen_row":    None,
-        }
+        meta = {"auto_select": False, "chosen_eps": None, "boundary_caveat": None}
 
-    fig = None
-    if plot:
-        fig = _plot_diagnostics(diagnostics_df, large_clr_threshold, kendall_threshold, meta.get("chosen_eps"))
-        plt.show()
+    # -------------------------------------------------
+    # 2-L: Finalization (Plotting & Verbose)
+    # -------------------------------------------------
+    fig = _plot_diagnostics(diagnostics_df, large_clr_threshold, kendall_threshold, meta["chosen_eps"]) if plot else None
+    if plot: plt.show()
 
     if verbose:
-        display_df = diagnostics_df.drop(columns=["T", "K", "rank_unique_ratio",  "n_zero_cells_pre_smooth"], errors="ignore").reset_index()
-        print(display_df.to_string(index=False))
+        cols_to_drop = ["T", "K", "rank_unique_ratio", "n_zero_cells_pre_smooth"]
+        # 1. Define the custom formatters for specific columns
+        formatters = {
+            'eps': '{:.16f}'.format,
+            'max_abs_clr': '{:.6f}'.format,
+            'mean_max_abs_clr': '{:.6f}'.format,
+            # Add any other float columns you want at 6 decimals
+        }
 
-    return {"diagnostics_df": diagnostics_df, "clr_dict": clr_dict, "meta": meta, "fig": fig}
+        # 2. Print the table
+        print(
+            diagnostics_df.drop(columns=cols_to_drop, errors="ignore")
+            .reset_index()
+            .to_string(index=False, formatters=formatters)
+        )
+
+    return {"diagnostics_df": diagnostics_df, "clr_dict": clr_dict, "meta": meta, "fig": fig}  
+
 
 # ---------------------------------------------------------------------------
-# Helper function 2-A: Compute rank‑order stability diagnostics
+# Helper Plot Function 2-A: Automated epsilon selection based on diagnostics
+# ---------------------------------------------------------------------------
+def _plot_diagnostics(
+    data_df: pd.DataFrame,
+    large_clr_threshold: float,
+    kendall_threshold: float,
+    chosen_eps: float | None = None,
+) -> plt.Figure:
+    """
+    Plot ε-sweep diagnostics across six panels on a log ε-axis.
+
+    Each panel visualizes one diagnostic metric. If a chosen ε is provided,
+    it is marked with a dashed vertical line. Legends are placed below each
+    panel to avoid overlap.
+    """
+    # -------------------------------------------------
+    # 2-A-1: Theme: Set a clean, minimalist style with a muted color palette
+    # -------------------------------------------------
+    plt.style.use("default")
+    plt.rcParams.update({
+        "axes.edgecolor":    "#444444",
+        "axes.labelcolor":   "#222222",
+        "axes.titlesize":    13,
+        "axes.titleweight":  "600",
+        "grid.color":        "#E5E5E5",
+        "grid.linewidth":    0.8,
+        "axes.spines.top":   False,
+        "axes.spines.right": False,
+        "font.family":       "sans-serif",
+    })
+    # -------------------------------------------------
+    # 2-A-2: Header values: extract T, K, and n_zero_cells 
+    #        from the first row of the diagnostics DataFrame
+    # -------------------------------------------------
+    T  = int(data_df["T"].iloc[0])
+    K  = int(data_df["K"].iloc[0])
+    nz = int(data_df["n_zero_cells_pre_smooth"].iloc[0])
+
+    # -------------------------------------------------
+    # 2-A-3: Panel config: Define colors, labels, and 
+    #        titles for each diagnostic panel
+    # -------------------------------------------------
+    colors = ["#4C78A8", "#F58518", "#54A24B", "#B279A2", "#E45756", "#1B9E77"]
+
+    # Create a 2x3 grid of subplots for the six diagnostics
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+
+    # Define the panels with their corresponding DataFrame column, color, y-label, and title
+    panels = [
+        (axes[0, 0], "max_abs_clr",            colors[0], "Max |CLR|",      "Sensitivity: Max |CLR|"),
+        (axes[0, 1], "pct_rows_large_clr",     colors[1], "% Observations", f"Sparsity Impact: % Rows > {large_clr_threshold}"),
+        (axes[0, 2], "rank_stability_kendall", colors[2], "Kendall τ",      "Rank Stability (Kendall)"),
+        (axes[1, 0], "rank_unique_ratio",      colors[3], "Unique Ratio",   "Rank Collapse Detection"),
+        (axes[1, 1], "pct_cells_near_zero",    colors[4], "% Cells < thr",  "Near-zero Cells"),
+        (axes[1, 2], "clr_var_near_zero",      colors[5], "CLR Var",        "CLR Variance from Near-zero Cells"),
+    ]
+    # ------------------------------------------------
+    # 2-A-4: Prepare the label for the chosen ε line if applicable
+    # ------------------------------------------------
+    chosen_label = fr"chosen $\epsilon$ = {chosen_eps:.6f}" if chosen_eps is not None else None
+
+    # -------------------------------------------------
+    # 2-A-5: Draw each panel: plot the metric if present, 
+    #        set log x-axis, titles, labels, and mark chosen ε
+    # -------------------------------------------------
+    for ax, col, color, ylabel, title in panels:
+
+        # Plot metric if present
+        if col in data_df.columns:
+            ax.plot(
+                data_df.index, data_df[col],
+                marker="o", markersize=4.5,
+                markeredgecolor="white", markeredgewidth=0.6,
+                color=color, linewidth=1.8, label=col,
+            )
+
+        # Shared formatting
+        ax.set_xscale("log")
+        ax.set_title(title, pad=10)
+        ax.set_xlabel("ε (Pseudocount)", fontsize=10)
+        ax.set_ylabel(ylabel, fontsize=10)
+        ax.tick_params(axis="both", labelsize=9, colors="#555555")
+
+        # Mark chosen ε with a vertical dashed line if provided
+        if chosen_eps is not None:
+            ax.axvline(chosen_eps, color="#2E7D32", lw=1.6, ls="--", label=chosen_label)
+
+    # Kendall threshold reference line
+    axes[0, 2].axhline(
+        kendall_threshold, color="#F58518", lw=1.2, ls=":",
+        label=fr"$\tau = {kendall_threshold:.3f}$",
+    )
+
+    # ------------------------------------------------
+    # 2-A-6: Legends below each panel: collect handles 
+    #        and labels, then place a single legend 
+    #        below each subplot
+    # ------------------------------------------------
+    for ax in axes.flatten():
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend(
+                handles, labels,
+                loc="upper center",
+                bbox_to_anchor=(0.5, -0.15),
+                frameon=False,
+                fontsize=9,
+                ncol=min(len(handles), 3),
+                handlelength=1.8,
+                columnspacing=1.4,
+                borderaxespad=0,
+            )
+    # -------------------------------------------------
+    # 2-A-7: Title and spacing: Add a comprehensive 
+    #        suptitle and adjust subplot spacing to 
+    #        prevent overlap
+    # -------------------------------------------------
+    fig.suptitle(
+        fr"$\boldsymbol{{\epsilon}}$ - Sweep Diagnostics  |  Data: {T} × {K}  |  Pre-smooth Zeros: {nz:,}",
+        fontsize=16, fontweight="600", y=0.995,
+    )
+
+    # subplots_adjust parameters are tuned to balance space for the suptitle, x/y labels, 
+    # and legends below each panel while maximizing the plot area for the data.
+    fig.subplots_adjust(
+        top=0.91,
+        bottom=0.14,
+        left=0.06,
+        right=0.98,
+        hspace=0.5,
+        wspace=0.15,
+    )
+
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Helper function 2-B: Compute rank‑order stability diagnostics
+#                      (sweep_epsilon_grid)
 # ---------------------------------------------------------------------------
 def _compute_rank_diagnostics(clr: pd.DataFrame, prev_clr: pd.DataFrame | None) -> dict[str, float]:
     """
@@ -786,10 +661,10 @@ def _compute_rank_diagnostics(clr: pd.DataFrame, prev_clr: pd.DataFrame | None) 
     (if provided) and summarizes how stable the rank structure is across
     iterations. Metrics include:
 
-      • Spearman rank correlation between flattened CLR matrices
-      • Kendall rank correlation between column‑wise rank orders
-      • Rank‑uniqueness ratio (fraction of distinct ranks per column)
-      • Rank‑entropy (Shannon entropy of rank distributions)
+      - Spearman rank correlation between flattened CLR matrices
+      - Kendall rank correlation between column‑wise rank orders
+      - Rank‑uniqueness ratio (fraction of distinct ranks per column)
+      - Rank‑entropy (Shannon entropy of rank distributions)
 
     These diagnostics help determine whether the epsilon grid search has
     reached a region where rank structure stabilizes.
@@ -856,141 +731,9 @@ def _compute_rank_diagnostics(clr: pd.DataFrame, prev_clr: pd.DataFrame | None) 
         "rank_entropy": float(np.mean(entropies)),
     }
 
-# ---------------------------------------------------------------------------
-# Helper function 2-B: Automated epsilon selection based on diagnostics
-# ---------------------------------------------------------------------------
-def _plot_diagnostics(
-    data_df: pd.DataFrame,
-    large_clr_threshold: float,
-    kendall_threshold: float,
-    chosen_eps: float | None = None
-) -> plt.Figure:
-    """
-    Render a 2X3 diagnostic panel summarizing the ε‑sweep.
-
-    Produces six coordinated diagnostic plots that visualize how CLR
-    behavior, sparsity effects, and rank‑stability metrics evolve across
-    the epsilon grid. Missing diagnostics are automatically labeled
-    “not computed”.
-
-    Panels include:
-      • Max |CLR| (sensitivity)
-      • % rows with large CLR values (sparsity impact)
-      • Kendall τ rank stability
-      • Rank‑uniqueness ratio (collapse detection)
-      • % cells near zero
-      • CLR variance from near‑zero cells
-
-    Parameters
-    ----------
-    data_df : pd.DataFrame
-        Long-format diagnostic table indexed by epsilon.
-
-    large_clr_threshold : float
-        Threshold used to flag rows with large CLR magnitudes.
-
-    kendall_threshold : float
-        Reference line for acceptable Kendall τ stability.
-
-    chosen_eps : float or None
-        Optional vertical marker for the selected epsilon.
-
-    Returns
-    -------
-    matplotlib.figure.Figure
-        Figure containing the 2X3 diagnostic layout.
-    """
-
-    # -------------------------------------------------
-    # A — Extract metadata for figure title
-    # -------------------------------------------------
-    T = int(data_df["T"].iloc[0])
-    K = int(data_df["K"].iloc[0])
-    nz = int(data_df["n_zero_cells_pre_smooth"].iloc[0])
-
-    # -------------------------------------------------
-    # B — Create 2X3 subplot layout and define panel specs
-    # -------------------------------------------------
-    fig, axes = plt.subplots(2, 3, figsize=(15, 8))
-    panels = [
-        (axes[0, 0], "max_abs_clr", "#2c3e50", "max |CLR|", "Sensitivity: Max |CLR|"),
-        (axes[0, 1], "pct_rows_large_clr", "#e74c3c", "% of Observations",
-         f"Sparsity Impact: % Rows > {large_clr_threshold}"),
-        (axes[0, 2], "rank_stability_kendall", "#8e44ad", "Kendall τ",
-         "Rank Stability (Kendall)"),
-        (axes[1, 0], "rank_unique_ratio", "#e67e22", "Unique Ratio",
-         "Rank Collapse Detection"),
-        (axes[1, 1], "pct_cells_near_zero", "#3498db", "% Cells < thr",
-         "Near-zero Cells (% below threshold)"),
-        (axes[1, 2], "clr_var_near_zero", "#16a085", "CLR Var",
-         "CLR Variance from Near-zero Cells"),
-    ]
-
-    # -------------------------------------------------
-    # C — Populate each panel or mark as “not computed”
-    # -------------------------------------------------
-    for ax, col, color, ylabel, title in panels:
-        if col in data_df.columns:
-            data_df[col].plot(marker="o", color=color, ax=ax)
-        else:
-            ax.text(0.5, 0.5, f"{col} not computed",
-                    ha="center", va="center", alpha=0.6)
-
-        ax.set(
-            xscale="log",
-            title=title,
-            xlabel="ε (Pseudocount)",
-            ylabel=ylabel,
-        )
-        ax.grid(True, which="both", ls="-", alpha=0.2)
-
-        # Optional vertical marker for chosen epsilon
-        if chosen_eps is not None:
-            ax.axvline(
-                chosen_eps,
-                color="green",
-                linewidth=1.2,
-                linestyle="--",
-                label=f"chosen ε={chosen_eps}",
-            )
-            ax.legend(fontsize=9)
-
-    # -------------------------------------------------
-    # D — Add reference lines for interpretability
-    # -------------------------------------------------
-    try:
-        axes[0, 1].axhline(0, color="black", linewidth=0.8, alpha=0.5)
-        axes[0, 2].axhline(
-            kendall_threshold,
-            color="orange",
-            linewidth=0.8,
-            linestyle=":",
-            label=f"τ={kendall_threshold}",
-        )
-        axes[0, 2].axhline(
-            1.0, color="black", linewidth=0.8, alpha=0.5, label="τ=1.0"
-        )
-        axes[0, 2].legend(fontsize=8)
-        axes[1, 0].axhline(1.0, color="black", linewidth=0.8, alpha=0.5)
-    except Exception:
-        pass
-
-    # -------------------------------------------------
-    # E — Final layout adjustments and return figure
-    # -------------------------------------------------
-    fig.suptitle(
-        f"ε‑Sweep Diagnostics\nData: {T} intervals X {K} types | "
-        f"Pre-smooth Zeros: {nz}",
-        fontsize=14,
-        fontweight="bold",
-        y=1.02,
-    )
-    plt.tight_layout()
-    fig.subplots_adjust(top=0.92, wspace=0.3, hspace=0.4)
-    return fig
 
 # ---------------------------------------------------------------------------
-# 3: Automated epsilon selection based on diagnostics
+# 3: Automated epsilon selection based on diagnostics (sweep_epsilon_grid)
 # ---------------------------------------------------------------------------
 def select_eps(
     df: pd.DataFrame,
@@ -1138,6 +881,7 @@ def select_eps(
     # ------------------------------------------------------------
     hard_mask = (
         (df['pct_cells_near_zero']      <= tol) &
+        (df['pct_rows_large_clr']       == 0) &   
         (df['rank_stability_kendall']   >= kendall_thresh) &
         (df['rank_stability_spearman']  >= spearman_thresh)
     )
@@ -1147,7 +891,7 @@ def select_eps(
         return eps, "Hard plateau (zero artifacts negligible)", "optimal"
 
     # ------------------------------------------------------------
-    # Stage 2 - Soft Plateau (additive tolerance, metric-specific)
+    # Stage 2 - Soft Plateau (additive tolerance)
     # ------------------------------------------------------------
     min_zero = df['pct_cells_near_zero'].min()
     max_k    = df['rank_stability_kendall'].max()
@@ -1155,13 +899,19 @@ def select_eps(
 
     soft_mask = (
         (df['pct_cells_near_zero']      <= min_zero + slack_zero) &
+        (df['pct_rows_large_clr']       == 0) & # <--- Keep this strict here too
         (df['rank_stability_kendall']   >= max_k    - slack_kendall) &
         (df['rank_stability_spearman']  >= max_s    - slack_spear)
     )
+    # Soft plateau relaxes the rank stability constraints to allow epsilons 
+    # that are close to the best observed values, while still requiring no
+    #  large CLR artifacts. This captures the "near-asymptotic" region where 
+    # metrics have essentially plateaued but may not meet the strict criteria 
+    # of Stage 1 due to minor sampling noise or residual near-zero cells.
     soft_plateau = df[soft_mask]
     if not soft_plateau.empty:
         eps = float(soft_plateau.index.min())
-        return eps, "Soft plateau (near-asymptotic)", "near_optimal"
+        return eps, "Soft plateau (near-asymptotic)", "near_optimal"    
 
     # ------------------------------------------------------------
     # Stage 3 - Elbow Detection (curvature on log10(eps) axis)

@@ -33,10 +33,10 @@ AGG_DICT_RESULT = None
 # ---------------------------------------------------------------------------------
 def _aggregate_counts(
     data_df: pd.DataFrame,
+    force_refresh: bool = None,
     group_col: str = _GROUP_KEY,
     date_col: str = _DATE_KEY,
     counter_col: str = _COUNTER_KEY,
-    force_refresh: bool = False
 ) -> Dict:
     """
     Aggregate raw records into monthly group-level counts, with caching.
@@ -47,7 +47,7 @@ def _aggregate_counts(
     and the date column is normalized to a proper datetime dtype. The group
     column is coerced to a categorical type for consistency and efficiency.
 
-    A module‑level cache is used to avoid recomputing the aggregation on
+    A module‑level cache is used to avo_aggregate_countsid recomputing the aggregation on
     repeated calls. The cached result is returned unless `force_refresh=True`
     or the cache is empty.
 
@@ -129,13 +129,12 @@ def _aggregate_counts(
 
     return AGG_DICT_RESULT
 
-
 # -------------------------------------------------------------------
 # 1. Main function for integrity report (no filling, just analysis)
 # -------------------------------------------------------------------
 def run_integrity_report(
     data_df       : pd.DataFrame,
-    force_refresh : bool = False,
+    force_refresh : bool = True,
     group_col     : str  = _GROUP_KEY,
     date_col      : str  = _DATE_KEY,
     freq          : str  = "MS"
@@ -158,7 +157,7 @@ def run_integrity_report(
     ----------
     data_df : pd.DataFrame
         Raw crime incident records containing at least `group_col` and `date_col`.
-    force_refresh : bool, default False
+    force_refresh : bool, default True
         If True, recompute the monthly aggregation even when a cached result exists.
     group_col : str
         Column identifying the crime category.
@@ -336,6 +335,7 @@ def run_integrity_report(
 # -------------------------------------------------------------------
 def fill_missing(
     data_df: pd.DataFrame,
+    force_refresh: bool = True,
     group_col: str = _GROUP_KEY,
     date_col: str = _DATE_KEY,
     value_col: str = _COUNTER_KEY,
@@ -398,7 +398,7 @@ def fill_missing(
     # -------------------------------------------------
     # 2-1: Aggregate and extract global date bounds
     # -------------------------------------------------
-    data_dict = _aggregate_counts(data_df)
+    data_dict = _aggregate_counts(data_df, force_refresh=force_refresh)
     data      = data_dict["data"]
     start     = data_dict["start_date"]
     end       = data_dict["end_date"]
@@ -630,3 +630,50 @@ def validate_crime_data(
         print("    ✨ No groups exceed the sparsity threshold.")
 
     print(f"{border}\n")
+
+
+# ------------------------------------------------------------------------------------
+# 4. Utility function to print a local transition window around the chosen epsilon
+# ------------------------------------------------------------------------------------
+def get_epsilon_transition(sweep_result, window_prior=5, window_past=10):
+    """
+    Extracts the transition window and returns a Styled DataFrame
+    filtered for specific metrics.
+    """
+    # Extract data sources
+    df_diag = sweep_result['diagnostics_df']
+    meta = sweep_result['meta']
+    mask = meta['pass_mask']
+    chosen_eps = meta['chosen_eps']
+
+    # Identify the slice indices
+    all_eps = df_diag.index.tolist()
+    winner_idx = all_eps.index(chosen_eps)
+    # Prior epsilon (if exists) is the one immediately before the chosen epsilon in the list
+    prior_eps = all_eps[winner_idx - 1] if winner_idx > 0 else None
+
+    
+    start_idx = max(0, winner_idx - window_prior)
+    end_idx = min(len(all_eps), winner_idx + window_past + 1)
+    transition_eps = all_eps[start_idx:end_idx]
+
+    # Build the DataFrame and remove unwanted columns
+    df = df_diag.loc[transition_eps].copy()
+    
+    cols_to_drop = ['T', 'K', 'pct_cells_near_zero', 'clr_var_near_zero',  'n_zero_cells_pre_smooth']
+    df = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+    
+    df = df.reset_index()
+
+    # Insert metadata columns
+    df.insert(0, 'index', [all_eps.index(e) for e in transition_eps])
+    df.insert(1, 'status', [("✅ TRUE" if mask[e] else "❌ FALSE") for e in transition_eps])
+    df.insert(2, 'is_chosen', [("⭐ [CHOSEN]" if e == chosen_eps else "") for e in transition_eps])
+    
+    # Define formatters
+    float_cols = df.select_dtypes(include=['float64']).columns
+    format_map = {col: "{:.6f}" for col in float_cols}
+    format_map['eps'] = "{:.10f}" 
+
+    # Return styled result & chosen eps
+    return df.style.format(format_map).hide(axis="index"), chosen_eps, prior_eps
