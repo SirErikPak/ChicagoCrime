@@ -380,7 +380,7 @@ def _print_pca_manifest(working_data: pd.DataFrame, epsilon: float = None,
 
     # Header includes epsilon value if provided
     header = (
-        f"{chart} PCA DATA MANIFEST (ε = {epsilon:.3f})"
+        f"{chart} PCA DATA MANIFEST (ε = {epsilon:.5f})"
         if epsilon is not None else f"{chart} PCA DATA MANIFEST"
     )
 

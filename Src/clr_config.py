@@ -50,7 +50,7 @@ _EPS_GRID: A list of small values representing the Jeffreys prior grid for smoot
 config_agg = {
     "_DATE_KEY"     : "year_month",
     "_COUNTER_KEY"  : "crime_count",
-    "_GROUP_KEY"    : "primary_description",
+    "_GROUP_KEY"    : "fbi_code_desc",
 }
 
 """
@@ -88,7 +88,7 @@ config_sweep = {
     "large_clr_threshold": 10.0,
     
     # C2: Stability Constraints (Minimum rank correlation required)
-    "kendall_threshold": 0.98,
+    "kendall_threshold": 0.99,
     "spearman_threshold": 0.999,
     
     # C3: Artifact Detection (Probability threshold for "near-zero" cells)

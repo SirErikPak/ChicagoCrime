@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import spearmanr, kendalltau
 
 # ----------------------------------------------------------------------------
-# Configuration parameters for clr_eps_grid_search.py
+# Configuration parameters for clr_eps_grid.py
 # ----------------------------------------------------------------------------
 _N_PER_DECADE               = cfg.config_grid["_N_PER_DECADE"]
 _INCLUDE_FIXED              = cfg.config_grid["_INCLUDE_FIXED"]
@@ -14,33 +14,56 @@ _MIN_MULTIPLIER_CANDIDATES  = cfg.config_grid["_MIN_MULTIPLIER_CANDIDATES"]
 _Q_LOW                      = cfg.config_grid["_Q_LOW"]
 _FLOOR                      = cfg.config_grid["_FLOOR"]
 _MIN_STEP                   = cfg.config_grid["_MIN_STEP"]
-# Pivot table keys from detection_config.py
+# Pivot table keys from clr_config.py
 _DATE_KEY                   = cfg.config_agg["_DATE_KEY"]
 _GROUP_KEY                  = cfg.config_agg["_GROUP_KEY"]
 _COUNTER_KEY                = cfg.config_agg["_COUNTER_KEY"]
+# Sweep and selection parameters from config_sweep
+_LARGE_CLR_THRESHOLD        = cfg.config_sweep["large_clr_threshold"]
+_KENDALL_THRESHOLD          = cfg.config_sweep["kendall_threshold"]
+_SPEARMAN_THRESHOLD         = cfg.config_sweep["spearman_threshold"]
+_NEAR_ZERO_THRESHOLD        = cfg.config_sweep["near_zero_threshold"]
+_SLACK_ZERO                 = cfg.config_sweep["slack_zero"]
+_SLACK_KENDALL              = cfg.config_sweep["slack_kendall"]
+_SLACK_SPEAR                = cfg.config_sweep["slack_spear"]
+_ELBOW_THRESHOLD            = cfg.config_sweep["elbow_threshold"]
+_FALLBACK_WEIGHTS           = cfg.config_sweep["fallback_weights"]
 
 # ---------------------------------------------------------------------------
 # Helper function 1-A: Pivot Table for building the eps grid
 # ---------------------------------------------------------------------------
-def _pivot(data_df: pd.DataFrame, index: str = _DATE_KEY,
+def _pivot(data_df: pd.DataFrame,
+           index: str = _DATE_KEY,
            column: str = _GROUP_KEY,
-           values: str = _COUNTER_KEY) -> pd.DataFrame:
+           values: str = _COUNTER_KEY,
+           fill_value: float = 0.0) -> pd.DataFrame:
+    """
+    Pivot already-aggregated, gap-filled long data into a T×K wide matrix.
 
-    # -------------------------------------------------
-    # Pivot long-format data into a TXK matrix
-    # Converts (date, group, value) rows into a wide
-    # matrix required for CLR transformation.
+    Input is expected to come from fill_missing(): one row per (date, group),
+    gaps already filled, no duplicate (index, column) pairs, complete month
+    range. pivot() is therefore safe.
 
-    # Note: pivot() is safe here because the validation
-    # pipeline guarantees no duplicate (index, column)
-    # pairs. If duplicates were possible, pivot_table()
-    # would be required.
-    # -------------------------------------------------
+    Adds a NaN safety net (fillna) in case any cell is absent despite the
+    upstream fill, since NaN would break the downstream CLR log.
+    """
+    work = data_df.copy()
+
+    # Date normalization (pyarrow-safe) — only matters if fill_missing emits
+    # a string/pyarrow date; harmless if already datetime.
+    s = work[index]
+    if not (pd.api.types.is_datetime64_any_dtype(s) or str(s.dtype).startswith('timestamp')):
+        raw = s.astype('string[pyarrow]').to_numpy(dtype=object)
+        cleaned = pd.Series(raw, index=work.index).str.replace('-', '', regex=False)
+        work[index] = pd.to_datetime(cleaned, format='%Y%m')
+
     pivot_df = (
-        data_df
+        work
         .pivot(index=index, columns=column, values=values)
         .sort_index()
     )
+    pivot_df.columns.name = None
+    pivot_df = pivot_df.fillna(fill_value)   # safety net; no-op if already complete
 
     return pivot_df
 
@@ -236,13 +259,14 @@ def build_eps_grid(
 def sweep_epsilon_grid(
     pivot: pd.DataFrame,
     eps_grid: Iterable[float],
-    large_clr_threshold: float = 10.0,
+    large_clr_threshold: float = _LARGE_CLR_THRESHOLD,
     plot: bool = True,
     auto_select: bool = False,
     verbose: bool = False,
-    kendall_threshold: float = 0.98,
-    spearman_threshold: float = 0.999,
-    near_zero_threshold: float | None = 1e-6,
+    kendall_threshold: float = _KENDALL_THRESHOLD,
+    spearman_threshold: float = _SPEARMAN_THRESHOLD,
+    near_zero_threshold: float | None = _NEAR_ZERO_THRESHOLD,
+    zero_strategy: str = 'add_all',
 ) -> dict[str, Any]:
     """
     Sweep over epsilon (pseudo-count) values and compute CLR diagnostics.
@@ -257,28 +281,49 @@ def sweep_epsilon_grid(
         Must have at least 2 rows for rank correlation computation.
     eps_grid : Iterable[float]
         Pseudo-count values to evaluate. Must be positive and non-duplicating.
-    large_clr_threshold : float, default=10.0
+    large_clr_threshold : float, default from config_sweep['large_clr_threshold']
         Upper bound for acceptable max |CLR| values; used to flag sensitivity.
+
     plot : bool, default=True
-        If True, generate and display diagnostics plot.
+        If True, generate and display diagnostics plots.
+
     auto_select : bool, default=False
-        If True, apply 3-stage automated eps selection and populate meta["chosen_eps"].
+        If True, run staged epsilon selection and populate selection metadata.
+
     verbose : bool, default=False
-        If True, print diagnostics_df to stdout.
-    kendall_threshold : float, default=0.98
+        If True, print the diagnostics table to stdout.
+
+    kendall_threshold : float, default from config_sweep['kendall_threshold']
         Minimum Kendall tau for rank stability to satisfy constraint C2.
-    spearman_threshold : float, default=0.999
+
+    spearman_threshold : float, default from config_sweep['spearman_threshold']
         Fallback Spearman rho threshold if kendall_threshold is unachievable.
-    near_zero_threshold : float or None, default=1e-6
+
+    near_zero_threshold : float or None, default from config_sweep['near_zero_threshold']
         If not None, compute per-eps "near-zero" diagnostics using this absolute threshold
         on the per-row probabilities (after adding eps and row-normalizing). Set to None to
         omit these diagnostics entirely.
+
+    zero_strategy : {'add_all', 'zero_only', 'multiplicative'}, default 'add_all'
+        How zeros (and counts) are handled before CLR:
+        - 'add_all'        : add eps to EVERY cell, then row-normalize.
+                             (Original behavior — Bayesian/Laplace smoothing.)
+        - 'zero_only'      : replace only zero cells with eps; leave non-zeros
+                             untouched, then row-normalize.
+        - 'multiplicative' : replace zeros with eps, shrink non-zeros to preserve
+                             row totals (Martin-Fernandez 2003), then normalize.
+
+        IMPORTANT: the selected epsilon is convention-dependent. If you change
+        zero_strategy, the chosen eps may differ. Use the SAME zero_strategy in
+        your downstream CLR transform that you used here. The chosen strategy is
+        recorded both per-row in diagnostics_df and once in the returned meta dict.
 
     Returns
     -------
     dict[str, Any]
         Keys:
         - diagnostics_df: pd.DataFrame indexed by eps with computed metrics
+          (includes a 'zero_strategy' column so rows are self-labeling when stacked)
         - clr_dict: dict mapping eps -> CLR DataFrame (for external use)
         - meta: dict containing auto-selection results (always present; minimal when auto_select=False)
         - fig: matplotlib Figure object (None if plot=False)
@@ -289,11 +334,20 @@ def sweep_epsilon_grid(
       in ascending order.
     """
     # -------------------------------------------------
-    # 2-A: Input validation and preprocessing
+    # 2-0: Input validation and preprocessing
     # -------------------------------------------------
     if pivot.shape[0] < 2:
         raise ValueError(
             f"pivot must have at least 2 rows to compute rank diagnostics; got shape {pivot.shape}"
+        )
+
+    # -------------------------------------------------
+    # 2-A: Validate zero_strategy parameter
+    # -------------------------------------------------
+    _VALID_STRATEGIES = ('add_all', 'zero_only', 'multiplicative')
+    if zero_strategy not in _VALID_STRATEGIES:
+        raise ValueError(
+            f"zero_strategy must be one of {_VALID_STRATEGIES}, got {zero_strategy!r}"
         )
 
     # ------------------------------------------------
@@ -317,6 +371,11 @@ def sweep_epsilon_grid(
     # of original zeros to CLR variance as eps grows.
     zero_bool_mask_pre = (pivot == 0).values
 
+    # Precompute arrays needed by 'zero_only' and 'multiplicative' strategies (once).
+    pivot_vals = pivot.to_numpy(dtype='float64')
+    row_total  = pivot_vals.sum(axis=1, keepdims=True)            # (T, 1)
+    n_zero_row = zero_bool_mask_pre.sum(axis=1, keepdims=True)    # (T, 1)
+
     # ------------------------------------------------
     # 2-E: Sweep over eps_grid and compute CLR + diagnostics
     # ------------------------------------------------
@@ -325,11 +384,40 @@ def sweep_epsilon_grid(
     prev_clr = None
 
     # ------------------------------------------------
-    # 2-F: For each eps, compute CLR and diagnostics
+    # 2-F: For each eps, compute CLR and diagnostics.
+    #      Zero handling depends on zero_strategy.
     # ------------------------------------------------
     for eps in eps_arr:
-        props = pivot + eps
-        props = props.div(props.sum(axis=1), axis=0)
+
+        if zero_strategy == 'add_all':
+            # Add eps to every cell, then row-normalize (original behavior).
+            props = pivot + eps
+            props = props.div(props.sum(axis=1), axis=0)
+
+        elif zero_strategy == 'zero_only':
+            # Replace only zero cells with eps; leave observed counts untouched.
+            props_vals = np.where(zero_bool_mask_pre, eps, pivot_vals)
+            props_vals = props_vals / props_vals.sum(axis=1, keepdims=True)
+            props = pd.DataFrame(props_vals, index=pivot.index, columns=pivot.columns)
+
+        else:  # 'multiplicative'
+            # Replace zeros with eps; shrink non-zeros to preserve each row total.
+            with np.errstate(divide='ignore', invalid='ignore'):
+                shrink = (row_total - n_zero_row * eps) / row_total
+            shrink = np.where(row_total > 0, shrink, 1.0)
+            props_vals = np.where(zero_bool_mask_pre, eps, pivot_vals * shrink)
+
+            # Guard: eps too large would push a non-zero count to <= 0.
+            if (props_vals <= 0).any():
+                raise ValueError(
+                    f"zero_strategy='multiplicative' produced non-positive values at "
+                    f"eps={eps:g}: eps is too large relative to some row totals. "
+                    f"Reduce the eps grid upper bound or use a different strategy."
+                )
+            props_vals = props_vals / props_vals.sum(axis=1, keepdims=True)
+            props = pd.DataFrame(props_vals, index=pivot.index, columns=pivot.columns)
+
+        # ---- CLR (identical for all strategies from here) ----
         logp = np.log(props)
         clr = logp.sub(logp.mean(axis=1), axis=0)
         abs_clr = np.abs(clr.values)
@@ -355,6 +443,7 @@ def sweep_epsilon_grid(
         diagnostics.append(
             {
                 "eps": eps,
+                "zero_strategy": zero_strategy,
                 "max_abs_clr": float(np.nanmax(abs_clr)),
                 "mean_max_abs_clr": float(np.nanmean(np.nanmax(abs_clr, axis=1))),
                 "pct_rows_large_clr": float((np.nanmax(abs_clr, axis=1) > large_clr_threshold).mean()) * 100.0,
@@ -368,7 +457,7 @@ def sweep_epsilon_grid(
                 "K": K,
             }
         )
-        # Store the CLR DataFrame for potential external use (e.g., plotting, further analysis)
+        # Store optional near-zero diagnostics
         if near_zero_threshold is not None:
             diagnostics[-1]["pct_cells_near_zero"] = pct_cells_near_zero
             diagnostics[-1]["clr_var_near_zero"] = clr_var_near_zero
@@ -380,7 +469,7 @@ def sweep_epsilon_grid(
     diagnostics_df = pd.DataFrame(diagnostics).set_index("eps")
 
     # -------------------------------------------------
-    # 2-G: Optional automated eps selection based on diagnostics
+    # 2-G: Optional automated staged eps selection based on diagnostics
     # -------------------------------------------------
     if auto_select:
         chosen_eps, chosen_reason, chosen_status = select_eps(
@@ -393,38 +482,36 @@ def sweep_epsilon_grid(
             # All stages require pct_rows_large_clr == 0
             if row.get("pct_rows_large_clr", 0) > 0:
                 return False
-            
+
             k = row.get("rank_stability_kendall")
             s = row.get("rank_stability_spearman")
             if pd.isna(k) or pd.isna(s):
                 return False
-            
+
             if chosen_status == "optimal":
-                # Stage 1 strict criteria
-                if row.get("pct_cells_near_zero", 0) > 1e-12:
-                    return False
+                # Stage 1 strict criteria: artifact-free plus stable ranks.
                 if k < kendall_threshold or s < spearman_threshold:
                     return False
             elif chosen_status == "near_optimal":
-                # Stage 2 soft plateau criteria
-                min_zero = diagnostics_df['pct_cells_near_zero'].min()
-                max_k = diagnostics_df['rank_stability_kendall'].max()
-                max_s = diagnostics_df['rank_stability_spearman'].max()
-                if row.get("pct_cells_near_zero", 0) > min_zero + 0.005:
+                # Stage 2 soft plateau criteria.
+                # IMPORTANT: must match select_eps Stage 2 — compute from artifact-free subset.
+                artifact_free = diagnostics_df[diagnostics_df['pct_rows_large_clr'] == 0]
+                min_zero = artifact_free['pct_cells_near_zero'].min()
+                max_k    = artifact_free['rank_stability_kendall'].max()
+                max_s    = artifact_free['rank_stability_spearman'].max()
+                if row.get("pct_cells_near_zero", 0) > min_zero + _SLACK_ZERO:
                     return False
-                if k < max_k - 0.010 or s < max_s - 0.005:
+                if k < max_k - _SLACK_KENDALL or s < max_s - _SLACK_SPEAR:
                     return False
             else:
-                # Stage 3/4: use Stage 1 criteria as a baseline "passes core checks" indicator
-                if row.get("pct_cells_near_zero", 0) > 1e-12:
-                    return False
+                # Stage 3/4: use the artifact-free + stability baseline.
                 if k < kendall_threshold or s < spearman_threshold:
                     return False
-            
+
             return True
 
         # -------------------------------------------------
-        # 2-H: Evaluate neighboring epsilons to determine 
+        # 2-H: Evaluate neighboring epsilons to determine
         #      if the chosen epsilon is at an edge or isolated
         # --------------------------------------------------
         pass_mask = diagnostics_df.apply(_passes_criteria, axis=1)
@@ -436,11 +523,11 @@ def sweep_epsilon_grid(
             "high": sorted_eps[idx + 1] if idx < len(sorted_eps) - 1 else None
         }
         # Determine pass/fail/not_in_grid status for neighbors
-        stats = {k: ("pass" if (v and pass_mask.loc[v]) else "fail" if v else "not_in_grid") 
+        stats = {k: ("pass" if (v and pass_mask.loc[v]) else "fail" if v else "not_in_grid")
                  for k, v in neighbors.items()}
 
         # ------------------------------------------------
-        # 2-I: Classify the chosen epsilon's position in 
+        # 2-I: Classify the chosen epsilon's position in
         #      the grid based on neighbor statuses
         # ------------------------------------------------
         if stats["low"] in ("fail", "not_in_grid") and stats["high"] == "pass":
@@ -453,7 +540,7 @@ def sweep_epsilon_grid(
             pos = "isolated"
 
         # -------------------------------------------------
-        # 2-J: Generate a caveat message if the chosen 
+        # 2-J: Generate a caveat message if the chosen
         #      epsilon is at an edge
         # --------------------------------------------------
         caveat = None
@@ -463,7 +550,7 @@ def sweep_epsilon_grid(
             caveat = f"Selection ε={chosen_eps:g} is ISOLATED. Nearby grid points are unstable."
 
         # -------------------------------------------------
-        # 2-K: Compile meta information about the selection 
+        # 2-K: Compile meta information about the selection
         #      for reporting and plotting
         # -------------------------------------------------
         status_map = {
@@ -475,42 +562,65 @@ def sweep_epsilon_grid(
         meta = {
             "auto_select": True,
             "chosen_eps": chosen_eps,
+            "chosen_reason": chosen_reason,
             "chosen_tag": chosen_status,
             "chosen_status": status_map.get(chosen_status, chosen_status),
             "grid_position": pos,
             "boundary_caveat": caveat,
             "grid_spacing_below_log10": float(np.log10(chosen_eps) - np.log10(neighbors["low"])) if neighbors["low"] else None,
             "chosen_row": diagnostics_df.loc[chosen_eps].to_dict(),
-            "pass_mask": pass_mask.to_dict()
+            "pass_mask": pass_mask.to_dict(),
+            "zero_strategy": zero_strategy,
         }
     else:
-        meta = {"auto_select": False, "chosen_eps": None, "boundary_caveat": None}
+        meta = {
+            "auto_select": False,
+            "chosen_eps": None,
+            "boundary_caveat": None,
+            "zero_strategy": zero_strategy,
+        }
 
     # -------------------------------------------------
     # 2-L: Finalization (Plotting & Verbose)
     # -------------------------------------------------
-    fig = _plot_diagnostics(diagnostics_df, large_clr_threshold, kendall_threshold, meta["chosen_eps"]) if plot else None
+    fig = _plot_diagnostics(
+        diagnostics_df,
+        large_clr_threshold,
+        kendall_threshold,
+        meta["chosen_eps"],
+        zero_strategy=zero_strategy,
+    ) if plot else None
     if plot: plt.show()
 
     if verbose:
-        cols_to_drop = ["T", "K", "rank_unique_ratio", "n_zero_cells_pre_smooth"]
-        # 1. Define the custom formatters for specific columns
+        # Summary header showing the strategy and selection result
+        print("\n" + "=" * 60)
+        print(f"  ε-SWEEP SUMMARY")
+        print("-" * 60)
+        print(f"  Zero strategy : {zero_strategy}")
+        if auto_select and meta.get("chosen_eps") is not None:
+            print(f"  Chosen ε      : {meta['chosen_eps']:.10f}")
+            print(f"  Status        : {meta.get('chosen_status', 'n/a')}")
+            if meta.get("boundary_caveat"):
+                print(f"  ⚠ Caveat      : {meta['boundary_caveat']}")
+        print("=" * 60 + "\n")
+
+        # Diagnostics table.
+        # zero_strategy is dropped from the printed table (constant across rows, shown
+        # in the header above) but REMAINS in diagnostics_df for programmatic use.
+        cols_to_drop = ["T", "K", "rank_unique_ratio", "n_zero_cells_pre_smooth", "zero_strategy"]
         formatters = {
             'eps': '{:.16f}'.format,
             'max_abs_clr': '{:.6f}'.format,
             'mean_max_abs_clr': '{:.6f}'.format,
-            # Add any other float columns you want at 6 decimals
         }
-
-        # 2. Print the table
         print(
             diagnostics_df.drop(columns=cols_to_drop, errors="ignore")
             .reset_index()
             .to_string(index=False, formatters=formatters)
         )
 
-    return {"diagnostics_df": diagnostics_df, "clr_dict": clr_dict, "meta": meta, "fig": fig}  
-
+    return {"diagnostics_df": diagnostics_df, "clr_dict": clr_dict, "meta": meta, "fig": fig}
 
 # ---------------------------------------------------------------------------
 # Helper Plot Function 2-A: Automated epsilon selection based on diagnostics
@@ -520,6 +630,7 @@ def _plot_diagnostics(
     large_clr_threshold: float,
     kendall_threshold: float,
     chosen_eps: float | None = None,
+    zero_strategy: str = None,
 ) -> plt.Figure:
     """
     Plot ε-sweep diagnostics across six panels on a log ε-axis.
@@ -625,20 +736,35 @@ def _plot_diagnostics(
                 columnspacing=1.4,
                 borderaxespad=0,
             )
+
     # -------------------------------------------------
-    # 2-A-7: Title and spacing: Add a comprehensive 
-    #        suptitle and adjust subplot spacing to 
-    #        prevent overlap
+    # 2-A-7: Title and spacing: Add a main suptitle plus
+    #        a smaller subheading line for strategy/eps
     # -------------------------------------------------
     fig.suptitle(
-        fr"$\boldsymbol{{\epsilon}}$ - Sweep Diagnostics  |  Data: {T} × {K}  |  Pre-smooth Zeros: {nz:,}",
+        fr"$\boldsymbol{{\epsilon}}$ - Sweep Diagnostics  |  Data: {T} × {K}  |  "
+        fr"Pre-smooth Zeros: {nz:,}",
         fontsize=16, fontweight="600", y=0.995,
     )
+
+    # Subheading: zero strategy (and chosen eps if marked)
+    sub_parts = []
+    if zero_strategy is not None:
+        sub_parts.append(f"Zero strategy: {zero_strategy}")
+    if chosen_eps is not None:
+        sub_parts.append(fr"chosen $\epsilon$ = {chosen_eps:.6f}")
+    if sub_parts:
+        fig.text(
+            0.5, 0.945,                          # centered, just below the suptitle
+            "  |  ".join(sub_parts),
+            ha="center", va="top",
+            fontsize=12, fontweight="500", color="#555555",
+        )
 
     # subplots_adjust parameters are tuned to balance space for the suptitle, x/y labels, 
     # and legends below each panel while maximizing the plot area for the data.
     fig.subplots_adjust(
-        top=0.91,
+        top=0.89,
         bottom=0.14,
         left=0.06,
         right=0.98,
@@ -737,14 +863,13 @@ def _compute_rank_diagnostics(clr: pd.DataFrame, prev_clr: pd.DataFrame | None) 
 # ---------------------------------------------------------------------------
 def select_eps(
     df: pd.DataFrame,
-    kendall_thresh: float,
-    spearman_thresh: float,
-    tol: float = 1e-12,
-    slack_zero: float = 0.005,
-    slack_kendall: float = 0.010,
-    slack_spear: float = 0.005,
-    elbow_threshold: float = 0.25,
-    fallback_weights: tuple = (1.0, 1.0, 1.0),
+    kendall_threshold: float,
+    spearman_threshold: float,
+    slack_zero: float = _SLACK_ZERO,
+    slack_kendall: float = _SLACK_KENDALL,
+    slack_spear: float = _SLACK_SPEAR,
+    elbow_threshold: float = _ELBOW_THRESHOLD,
+    fallback_weights: tuple = _FALLBACK_WEIGHTS,
 ) -> Tuple[float, str, str]:
     """
     Select the CLR zero-handling epsilon via cascading-fallback criteria.
@@ -766,17 +891,11 @@ def select_eps(
             'rank_stability_spearman'  : Spearman rho vs reference ranking
             'mean_max_abs_clr'         : distortion magnitude (Stage 3 elbow)
 
-    kendall_thresh : float
+    kendall_threshold : float
         Strict Kendall threshold for Stage 1 hard plateau (e.g., 0.98).
 
-    spearman_thresh : float
+    spearman_threshold : float
         Strict Spearman threshold for Stage 1 hard plateau (e.g., 0.999).
-
-    tol : float, default 1e-12
-        Strict tolerance for "no zero artifacts" in Stage 1. A row qualifies
-        for the hard plateau only if pct_cells_near_zero <= tol. The default
-        is essentially zero; pass a small positive value (e.g., 0.001) to
-        make Stage 1 reachable on sweeps with residual near-zero cells.
 
     slack_zero : float, default 0.005
         Stage 2 additive tolerance for pct_cells_near_zero. A row qualifies
@@ -868,8 +987,8 @@ def select_eps(
     >>> sweep = sweep_epsilon_grid(pivot, np.logspace(-6, -1, 30))
     >>> eps, reason, status = select_eps(
     ...     sweep['diagnostics_df'],
-    ...     kendall_thresh=0.98,
-    ...     spearman_thresh=0.999,
+    ...     kendall_threshold=0.98,
+    ...     spearman_threshold=0.999,
     ... )
     >>> print(f"Selected eps={eps:.2e} via {status}: {reason}")
     Selected eps=3.16e-04 via near_optimal: Soft plateau (near-asymptotic)
@@ -880,38 +999,44 @@ def select_eps(
     # Stage 1 - Hard Plateau (strict)
     # ------------------------------------------------------------
     hard_mask = (
-        (df['pct_cells_near_zero']      <= tol) &
         (df['pct_rows_large_clr']       == 0) &   
-        (df['rank_stability_kendall']   >= kendall_thresh) &
-        (df['rank_stability_spearman']  >= spearman_thresh)
+        (df['rank_stability_kendall']   >= kendall_threshold) &
+        (df['rank_stability_spearman']  >= spearman_threshold)
     )
+
     hard_plateau = df[hard_mask]
     if not hard_plateau.empty:
         eps = float(hard_plateau.index.min())
-        return eps, "Hard plateau (zero artifacts negligible)", "optimal"
+        return eps, "Hard plateau (artifact-free + rank-stable)", "optimal"
 
     # ------------------------------------------------------------
     # Stage 2 - Soft Plateau (additive tolerance)
     # ------------------------------------------------------------
-    min_zero = df['pct_cells_near_zero'].min()
-    max_k    = df['rank_stability_kendall'].max()
-    max_s    = df['rank_stability_spearman'].max()
+    # First, filter to rows where pct_rows_large_clr == 0 (no large CLR artifacts)
+    # Then compute plateau thresholds from THOSE rows only. This ensures we're finding
+    # the "softest" epsilon among candidates that have already eliminated distortion.
+    artifact_free = df[df['pct_rows_large_clr'] == 0]
+    
+    if not artifact_free.empty:
+        min_zero = artifact_free['pct_cells_near_zero'].min()
+        max_k    = artifact_free['rank_stability_kendall'].max()
+        max_s    = artifact_free['rank_stability_spearman'].max()
 
-    soft_mask = (
-        (df['pct_cells_near_zero']      <= min_zero + slack_zero) &
-        (df['pct_rows_large_clr']       == 0) & # <--- Keep this strict here too
-        (df['rank_stability_kendall']   >= max_k    - slack_kendall) &
-        (df['rank_stability_spearman']  >= max_s    - slack_spear)
-    )
-    # Soft plateau relaxes the rank stability constraints to allow epsilons 
-    # that are close to the best observed values, while still requiring no
-    #  large CLR artifacts. This captures the "near-asymptotic" region where 
-    # metrics have essentially plateaued but may not meet the strict criteria 
-    # of Stage 1 due to minor sampling noise or residual near-zero cells.
-    soft_plateau = df[soft_mask]
-    if not soft_plateau.empty:
-        eps = float(soft_plateau.index.min())
-        return eps, "Soft plateau (near-asymptotic)", "near_optimal"    
+        soft_mask = (
+            (df['pct_cells_near_zero']      <= min_zero + slack_zero) &
+            (df['pct_rows_large_clr']       == 0) &
+            (df['rank_stability_kendall']   >= max_k    - slack_kendall) &
+            (df['rank_stability_spearman']  >= max_s    - slack_spear)
+        )
+        # Soft plateau relaxes the rank stability constraints to allow epsilons 
+        # that are close to the best observed values (within artifact-free subset),
+        # while still requiring no large CLR artifacts. This captures the 
+        # "near-asymptotic" region where metrics have essentially plateaued but may 
+        # not meet the strict criteria of Stage 1 due to minor sampling noise.
+        soft_plateau = df[soft_mask]
+        if not soft_plateau.empty:
+            eps = float(soft_plateau.index.min())
+            return eps, "Soft plateau (near-asymptotic)", "near_optimal"    
 
     # ------------------------------------------------------------
     # Stage 3 - Elbow Detection (curvature on log10(eps) axis)
@@ -954,3 +1079,147 @@ def select_eps(
 
     eps = float(composite.idxmax())
     return eps, "Fallback (composite score across metrics)", "fallback"
+
+
+# ---------------------------------------------------------------------------
+# 4: CLR transform with flexible zero handling (external utility function)
+# ---------------------------------------------------------------------------
+def clr_transform(counts: pd.DataFrame,
+                  epsilon: float,
+                  zero_strategy: str = 'add_all',
+                  exclude_features: list = None,
+                  validate: bool = True,
+                  verbose: bool = False,
+                  index: str = _DATE_KEY,
+                  column: str = _GROUP_KEY,
+                  values: str = _COUNTER_KEY) -> pd.DataFrame:
+    """
+    Centered Log-Ratio (CLR) transform on an aggregated long panel.
+
+    Expects already-aggregated, gap-filled long data (e.g. fill_results['filled_df']):
+    one row per (date, category), no duplicate (date, category) pairs. The function
+    optionally excludes categories, reshapes to wide via _pivot(), then applies CLR.
+
+    Each output row sums to ~0. CLR is denominator-dependent: excluding categories
+    here (before the pivot) removes them from the geometric-mean denominator,
+    producing a true sub-composition.
+
+    Parameters
+    ----------
+    counts : pd.DataFrame
+        Aggregated long panel with columns [index, column, values].
+        Typically fill_results['filled_df']. pyarrow-backed dtypes are fine.
+    epsilon : float
+        Pseudocount for zero handling. Must be > 0.
+    zero_strategy : {'add_all', 'zero_only', 'multiplicative'}, default 'add_all'
+        'add_all'        : add epsilon to EVERY cell, then row-normalize.
+                           Matches sweep_epsilon_grid (`pivot + eps`).
+        'zero_only'      : replace only zero cells with epsilon.
+        'multiplicative' : replace zeros with epsilon, shrink non-zeros to
+                           preserve each row total (Martin-Fernandez 2003).
+    exclude_features : list, optional
+        Category names (in `column`) to drop BEFORE pivoting — controls the
+        sub-composition.
+    validate : bool, default True
+        Check for NaN and negatives on the wide matrix before CLR.
+    verbose : bool, default False
+        Print exclusion and CLR diagnostics.
+    index, column, values : str
+        Long-panel keys; default to _DATE_KEY / _GROUP_KEY / _COUNTER_KEY.
+
+    Returns
+    -------
+    pd.DataFrame
+        CLR coordinates, wide format (months × categories).
+    """
+    # ----------------------------------------------------------------------
+    # 4-1: Validation of scalar args
+    # ----------------------------------------------------------------------
+    if epsilon <= 0:
+        raise ValueError(f"epsilon must be > 0, got {epsilon}")
+    valid = ('add_all', 'zero_only', 'multiplicative')
+    if zero_strategy not in valid:
+        raise ValueError(f"zero_strategy must be one of {valid}, got {zero_strategy!r}")
+
+    # Copy to avoid modifying the original DataFrame (especially if it's a view or has pyarrow-backed dtypes)
+    work = counts.copy()
+
+    # ----------------------------------------------------------------------
+    # 4-2: Exclude categories BEFORE pivot (true sub-composition)
+    # ----------------------------------------------------------------------
+    if exclude_features:
+        existing = set(work[column].unique())
+        present  = [c for c in exclude_features if c in existing]
+        missing  = [c for c in exclude_features if c not in existing]
+        before   = work[column].nunique()
+        work     = work[~work[column].isin(exclude_features)]
+        after    = work[column].nunique()
+        if verbose:
+            noun = 'category' if len(present) == 1 else 'categories'
+            print(f"Excluded {len(present)} {noun} before pivot: {present}")
+            if missing:
+                print(f"  (requested but not found in data: {missing})")
+            print(f"  categories: {before} -> {after}")
+
+    # ----------------------------------------------------------------------
+    # 4-3: Reshape long -> wide via _pivot (safe: no duplicate (date,group) pairs)
+    # ----------------------------------------------------------------------
+    wide = _pivot(work, index=index, column=column, values=values)
+
+    # ----------------------------------------------------------------------
+    # 4-4: To numpy + validation
+    # ----------------------------------------------------------------------
+    X = wide.to_numpy(dtype='float64', na_value=np.nan)
+    if validate:
+        if np.isnan(X).any():
+            raise ValueError("Wide matrix contains NaN (check _pivot fill).")
+        if (X < 0).any():
+            raise ValueError("Wide matrix contains negative values.")
+
+    n_zeros = int((X == 0).sum())
+    zero_mask = (X == 0)
+
+    # ----------------------------------------------------------------------
+    # 4-5: Zero handling
+    # ----------------------------------------------------------------------
+    if zero_strategy == 'add_all':
+        props = X + epsilon
+        props = props / props.sum(axis=1, keepdims=True)
+        log_X = np.log(props)
+
+    elif zero_strategy == 'zero_only':
+        X_pos = np.where(zero_mask, epsilon, X)
+        log_X = np.log(X_pos)
+
+    else:  # multiplicative
+        row_total  = X.sum(axis=1, keepdims=True)
+        n_zero_row = zero_mask.sum(axis=1, keepdims=True)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            shrink = (row_total - n_zero_row * epsilon) / row_total
+        shrink = np.where(row_total > 0, shrink, 1.0)
+        X_pos = np.where(zero_mask, epsilon, X * shrink)
+        if (X_pos <= 0).any():
+            raise ValueError(
+                "Multiplicative replacement produced non-positive values — "
+                "epsilon too large relative to some row totals."
+            )
+        log_X = np.log(X_pos)
+
+    # ----------------------------------------------------------------------
+    # 4-6: CLR core
+    # ----------------------------------------------------------------------
+    clr_vals = log_X - log_X.mean(axis=1, keepdims=True)
+
+    # ----------------------------------------------------------------------
+    # 4-7: Diagnostics
+    # ----------------------------------------------------------------------
+    if verbose:
+        max_abs = np.abs(clr_vals).max()
+        row_sum_err = np.abs(clr_vals.sum(axis=1)).max()
+        print(f"CLR transform [{zero_strategy}]: {X.shape[0]} × {X.shape[1]}")
+        print(f"  epsilon          : {epsilon}")
+        print(f"  zeros in data    : {n_zeros} ({n_zeros / X.size:.2%} of cells)")
+        print(f"  max |CLR|        : {max_abs:.4f}")
+        print(f"  max row-sum error: {row_sum_err:.2e}")
+
+    return pd.DataFrame(clr_vals, index=wide.index, columns=wide.columns)
