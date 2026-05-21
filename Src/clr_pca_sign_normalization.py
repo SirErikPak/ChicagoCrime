@@ -107,14 +107,12 @@ def stable_sign_normalize(loadings: np.ndarray, coords: np.ndarray, feature_name
     if not (0 <= anchor_observation < coords.shape[0]):
         raise IndexError("anchor_observation out of bounds.")
 
-
     # --------------------------------------------------------------------
     # Step 1-B: Create copies of loadings and coords to apply sign 
     # normalization without modifying originals
     # --------------------------------------------------------------------
     loadings_norm = loadings.copy()
     coords_norm   = coords.copy()
-
 
     # --------------------------------------------------------------------
     # Step 1-C: Apply sign normalization per component according to the 
@@ -417,9 +415,7 @@ def plot_three_loadings(
     order=None,          
     epsilon=None,
     figsize=(20, 10),
-    label_fmt="{:.2f}",
-    image_save=None,
-    image_path=None
+    label_fmt="{:.2f}"
 ):
     """
     Create a clean, modern horizontal‑bar visualization of the first three
@@ -450,12 +446,6 @@ def plot_three_loadings(
 
     label_fmt : str, default "{:.2f}"
         Format string for bar‑end numeric labels.
-
-    image_save : str or None, default None
-        Filename to save the figure. Only used if `image_path` is also provided.
-
-    image_path : str or None, default None
-        Directory where the figure will be saved.
 
     Returns
     -------
@@ -559,13 +549,5 @@ def plot_three_loadings(
     # Adjust title position to prevent overlap with subplots
     plt.tight_layout()
     plt.subplots_adjust(wspace=0.18)
-
     # --------------------------------------------------------------------
-    # Step 3-E: Optional Saving Logic
-    # --------------------------------------------------------------------
-    if image_save and image_path:
-        # Ensure the save directory exists
-        full_path = os.path.join(image_path, image_save)
-        fig.savefig(full_path, dpi=300, bbox_inches="tight")
-
     return {'figure': fig, 'axis': axes}

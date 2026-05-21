@@ -677,3 +677,156 @@ def get_epsilon_transition(sweep_result, window_prior=5, window_past=10):
 
     # Return styled result & chosen eps
     return df.style.format(format_map).hide(axis="index"), chosen_eps, prior_eps
+
+
+# ------------------------------------------------------------------------------------
+# 5: Main function to audit CLR‑era matrices and reconstructed wide‑format dataset
+# ------------------------------------------------------------------------------------
+def audit_clr_and_wide(clr_era: dict, fill_results: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Perform a combined structural audit of CLR‑era matrices and the reconstructed
+    wide‑format dataset.
+
+    This function:
+      • Rebuilds the full CLR dataframe by concatenating the three era‑specific
+        CLR matrices (Pre‑COVID, COVID, Post‑COVID).
+      • Reconstructs the raw wide‑format dataset from the filled long‑format data.
+      • Prints a structured audit report summarizing:
+            - Matrix dimensionality
+            - Timeline boundaries
+            - Feature schema alignment
+            - Column‑set discrepancies (if any)
+      • Returns both reconstructed dataframes for downstream analysis.
+
+    Parameters
+    ----------
+    clr_era : dict
+        Dictionary containing three CLR‑transformed dataframes keyed by:
+        'Pre-COVID', 'COVID', and 'Post-COVID'.
+    fill_results : dict
+        Must contain 'filled_df', the long‑format filled dataset used to rebuild
+        the wide‑format matrix.
+
+    Returns
+    -------
+    tuple[pd.DataFrame, pd.DataFrame]
+        clr_df  : Full reconstructed CLR dataframe (concatenated across eras)
+        raw_wide: Reconstructed wide‑format dataframe (pivoted from filled_df)
+    """
+
+    # ---------------------------------------------------------
+    # 5-1: Concatenate the three CLR era segments into a single timeline
+    # ---------------------------------------------------------
+    clr_df = pd.concat([
+        clr_era['Pre-COVID'],
+        clr_era['COVID'],
+        clr_era['Post-COVID']
+    ])
+
+    # Extract the long-format filled dataset
+    filled_long = fill_results['filled_df']
+
+    # Reconstruct wide-format dataset using a safe pivot fallback
+    raw_wide = (
+        filled_long.pivot(index='date', columns='category', values='value')
+        if 'date' in filled_long.columns
+        else clr_df.copy()
+    )
+
+    # ---------------------------------------------------------
+    # 5-2: Set Up Formatting Parameters
+    # ---------------------------------------------------------
+    width = 80
+    row_fmt = "  {:<38} | {:>26}"
+    divider = "─" * width
+
+    # ---------------------------------------------------------
+    # 5-3: Header block for the audit report
+    # ---------------------------------------------------------
+    print("═" * width)
+    print(f"{'📊 SYSTEM INTEGRITY AUDIT REPORT':^{width}}")
+    print(f"{'Structural Dimensionality & Alignment Verification':^{width}}")
+    print("═" * width)
+    print(row_fmt.format("Inspection Target Node", "Properties / Shapes"))
+    print(divider)
+
+    # ---------------------------------------------------------
+    # 5-1-A: Matrix dimensionality section
+    # ---------------------------------------------------------
+    print(f" [ DATA MATRIX DIMENSIONALITY ]")
+    print(row_fmt.format(
+        "  ├── Reconstructed CLR Space",
+        f"{clr_df.shape[0]:,} Rows × {clr_df.shape[1]:,} Cols"
+    ))
+    print(row_fmt.format(
+        "  └── Reference Filled Long Space",
+        f"{filled_long.shape[0]:,} Rows × {filled_long.shape[1]:,} Cols"
+    ))
+    print(divider)
+
+    # ---------------------------------------------------------
+    # 5-1-B: Timeline boundary section
+    # ---------------------------------------------------------
+    print(f" [ TEMPORAL TIMELINE BOUNDARIES ]")
+
+    # Extract first and last three timestamps for inspection
+    formatted_start = clr_df.index[:3].astype(str).str[:7].tolist()
+    formatted_end = clr_df.index[-3:].astype(str).str[:7].tolist()
+
+    print(row_fmt.format(
+        "  ├── Timeline Head (Start Window)",
+        f"{formatted_start} …"
+    ))
+    print(row_fmt.format(
+        "  └── Timeline Tail (End Window)",
+        f"… {formatted_end}"
+    ))
+    print(divider)
+
+    # ---------------------------------------------------------
+    # 5-1-C: Schema comparison section
+    # ---------------------------------------------------------
+    print(f" [ FEATURE SCHEMA COMPARISON ]")
+
+    print(row_fmt.format(
+        "  ├── CLR Feature Dimensions",
+        f"{len(clr_df.columns)} Columns"
+    ))
+    print(row_fmt.format(
+        "  ├── RAW‑WIDE Feature Dimensions",
+        f"{len(raw_wide.columns)} Columns"
+    ))
+
+    # Check if the two column sets match exactly
+    sets_identical = set(clr_df.columns) == set(raw_wide.columns)
+
+    print(row_fmt.format(
+        "  └── Column Feature Sets Identical",
+        str(sets_identical).upper()
+    ))
+    print(divider)
+
+    # ---------------------------------------------------------
+    # 5-1-D: Column discrepancy section
+    # ---------------------------------------------------------
+    print(f" [ INTERSECTION DISCREPANCY ANALYSIS ]")
+
+    # Identify columns exclusive to each dataset
+    only_clr = set(clr_df.columns) - set(raw_wide.columns)
+    only_raw = set(raw_wide.columns) - set(clr_df.columns)
+
+    # Report alignment or mismatches
+    if not only_clr and not only_raw:
+        print(row_fmt.format("  └── Schema Alignment State", "✅ PERFECT ALIGNMENT"))
+    else:
+        if only_clr:
+            print(f"  ├── ❗ Exclusive to CLR: {sorted(only_clr)}")
+        if only_raw:
+            print(f"  └── ❗ Exclusive to RAW-WIDE: {sorted(only_raw)}")
+
+    print("═" * width)
+
+    # ---------------------------------------------------------
+    # Return both reconstructed dataframes
+    # ---------------------------------------------------------
+    return clr_df, raw_wide

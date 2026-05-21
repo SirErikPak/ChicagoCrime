@@ -87,13 +87,12 @@ def slice_clr_into_eras(clr_dict, era_boundaries, eps):
     # -------------------------------------------------
     # 4. Diagnostic report
     # -------------------------------------------------
-    header_w = 64
     label_w  = 18
     border   = "=" * 60
     line     = "-" * 60
 
     print(f"\n{border}")
-    print(f" 📅  CLR TEMPORAL SEGMENTATION REPORT (ε = {eps})")
+    print(f" 📅  CLR TEMPORAL SEGMENTATION REPORT (ε = {eps:.14f})")
     print(f"{border}")
 
     print(f"  • {'Total Matrix':<{label_w}} : {clr_df.shape[0]} months x {clr_df.shape[1]} crimes")

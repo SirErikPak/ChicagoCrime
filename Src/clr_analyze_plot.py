@@ -9,12 +9,12 @@ import matplotlib.patches as mpatches
 from matplotlib.ticker import FuncFormatter
 from typing import Mapping, Dict, Any, Tuple, Optional
 import seaborn as sns
-from sklearn.decomposition import PCA
 from numpy.linalg import norm
 from scipy.linalg import subspace_angles
+from scipy import stats
 
 # ---------------------------------------------------------------------
-# 0. Fancy PCA Plot Bundle
+# 1: Fancy PCA Plot Bundle
 # ---------------------------------------------------------------------
 def fancy_pca_plot_bundle(results: Mapping[float, pd.DataFrame], 
                           era_config: Dict[str, tuple], eps=None,
@@ -72,7 +72,7 @@ def fancy_pca_plot_bundle(results: Mapping[float, pd.DataFrame],
     """
 
     # ------------------------------------------------------------
-    # 0-A. EXTRACT PCA OUTPUTS
+    # 1-A. EXTRACT PCA OUTPUTS
     # ------------------------------------------------------------
     coords         = results[eps]['coords_norm']        # Normalized PC coordinates
     timestamps     = results[eps]['observation_index']  # Raw timestamps
@@ -84,7 +84,7 @@ def fancy_pca_plot_bundle(results: Mapping[float, pd.DataFrame],
     k_categories = coords.shape[1]
 
     # ------------------------------------------------------------
-    # 0-B. ERA LABEL ASSIGNMENT
+    # 1-B. ERA LABEL ASSIGNMENT
     # ------------------------------------------------------------
     # Convert timestamps to YYYY-MM-DD strings for comparison
     ts_str_array = np.array([str(ts)[:10] for ts in timestamps])
@@ -98,13 +98,13 @@ def fancy_pca_plot_bundle(results: Mapping[float, pd.DataFrame],
         era_labels[mask] = name
 
     # ------------------------------------------------------------
-    # 0-C. PROGRAMMATIC BACKGROUND COLOR MATCH
+    # 1-C. PROGRAMMATIC BACKGROUND COLOR MATCH
     # ------------------------------------------------------------
     # Sample the 'vlag' colormap at 0.0 to match KDE background
     match_color = plt.get_cmap("vlag")(0.0)
 
     # ------------------------------------------------------------
-    # 0-D. BASE DENSITY PLOT (KDE)
+    # 1-D. BASE DENSITY PLOT (KDE)
     # ------------------------------------------------------------
     args_density = {
         'fill': True,
@@ -124,14 +124,14 @@ def fancy_pca_plot_bundle(results: Mapping[float, pd.DataFrame],
     )
 
     # ------------------------------------------------------------
-    # 0-E. FIX CORNERS + ADD MARGINS
+    # 1-E. FIX CORNERS + ADD MARGINS
     # ------------------------------------------------------------
     fig.set_facecolor(match_color)   # Match figure background
     ax.set_facecolor(match_color)    # Match axes background
     ax.margins(0.15)                 # Add breathing room around clusters
 
     # ------------------------------------------------------------
-    # 0-F. ERA-COLORED SCATTER OVERLAY
+    # 1-F. ERA-COLORED SCATTER OVERLAY
     # ------------------------------------------------------------
     for era_name, (start, end, color) in era_config.items():
         mask = (era_labels == era_name)
@@ -147,7 +147,7 @@ def fancy_pca_plot_bundle(results: Mapping[float, pd.DataFrame],
             )
 
     # ------------------------------------------------------------
-    # 0-G. TITLES & AXIS LABELS
+    # 1-G. TITLES & AXIS LABELS
     # ------------------------------------------------------------
     ax.set_title(
         rf"Structural Realignment of Chicago Crime ($\epsilon$={eps:.2f})"
@@ -175,7 +175,7 @@ def fancy_pca_plot_bundle(results: Mapping[float, pd.DataFrame],
     ax.tick_params(colors='white', labelsize=font_size - 2)
 
     # ------------------------------------------------------------
-    # 0-H. LEGEND (ERA COLORS + DATE RANGES)
+    # 1-H. LEGEND (ERA COLORS + DATE RANGES)
     # ------------------------------------------------------------
     handles = [
         mpatches.Patch(color=c, label=f"{n}\n({s} to {e})")
@@ -192,7 +192,7 @@ def fancy_pca_plot_bundle(results: Mapping[float, pd.DataFrame],
     )
 
     # ------------------------------------------------------------
-    # 0-I. SUBTLE GRID + SPINE CLEANUP
+    # 1-I. SUBTLE GRID + SPINE CLEANUP
     # ------------------------------------------------------------
     ax.grid(True, color='white', alpha=0.1, linestyle='--')
 
@@ -201,7 +201,7 @@ def fancy_pca_plot_bundle(results: Mapping[float, pd.DataFrame],
         spine.set_edgecolor(match_color)
 
     # ------------------------------------------------------------
-    # 0-J. OPTIONAL SAVE
+    # 1-J. OPTIONAL SAVE
     # ------------------------------------------------------------
     if image_save and image_path:
         plt.savefig(
@@ -214,247 +214,7 @@ def fancy_pca_plot_bundle(results: Mapping[float, pd.DataFrame],
 
 
 # ---------------------------------------------------------------------------
-# 1. Three-PC loadings plot
-# ---------------------------------------------------------------------------
-def plot_three_pc_loadings(
-    clr_data: pd.DataFrame,
-    chosen_eps: float,
-    exclude_features: list = None,
-    figsize: tuple[float, float] = (20, 10),
-    label_fmt: str = "%.3f",
-    verbose: bool = True,
-    image_save: str = None,
-    image_path: str = None
-) -> dict:
-    """
-    Plot the first three principal component loadings with stable orientation
-    and modern visualization aesthetics.
-
-    This function:
-    - Optionally excludes user-specified features before PCA
-    - Fits PCA to CLR-transformed data (all components, but only PC1–PC3 are plotted)
-    - Normalizes the sign of each component using a robust rule:
-        * If the feature with the largest absolute loading is negative,
-          the entire component (loadings + scores) is flipped.
-      This ensures consistent orientation across runs, epsilons, and datasets.
-    - Orders features by PC1 loading to create a stable shared y-axis
-    - Produces three aligned horizontal bar charts (PC1, PC2, PC3)
-    - Returns raw loadings, normalized loadings, PC coordinates, variance ratios,
-      singular values, and excluded features.
-
-    Parameters
-    ----------
-    clr_data : pd.DataFrame
-        CLR-transformed feature table (samples X features).
-    chosen_eps : float
-        Epsilon value used for annotation and manifest printing.
-    exclude_features : list, optional
-        List of feature names to drop before PCA.
-    figsize : tuple
-        Figure size for the 3-panel layout.
-    label_fmt : str
-        Format string for bar-label numeric annotations.
-    verbose : bool
-        Whether to print a PCA manifest summary.
-    image_save : str, optional
-        If provided, the figure is saved as `image_path + image_save`.
-        Both `image_save` and `image_path` must be set for saving to occur.
-    image_path : str, optional
-        Directory path prefix for the saved figure. Concatenated directly with
-        `image_save`, so should end with the appropriate path separator.
-
-    Returns
-    -------
-    dict
-        {
-            "figure": matplotlib Figure,
-            "loadings_raw": raw PCA loadings (before sign normalization),
-            "loadings_norm": sign-aligned loadings,
-            "coords_raw": raw PC scores,
-            "coords_norm": normalized PC scores,
-            "variance_ratio": explained variance ratios,
-            "singular_values": singular values,
-            "observation_index": index of observations (samples),
-            "excluded": list of excluded features
-        }
-    """
-    # ------------------------------------------------------------
-    # 1-A. Feature Exclusion & Manifest
-    # ------------------------------------------------------------
-    working_data = clr_data.copy()
-
-    # Drop only features that actually exist in the DataFrame
-    if exclude_features:
-        exclude_features = sorted(set(exclude_features))
-        excluded_found = [f for f in exclude_features if f in working_data.columns]
-        working_data = working_data.drop(columns=excluded_found)
-    else:
-        excluded_found = []
-
-    # Optional manifest printout for transparency
-    if verbose:
-        width, val_w , lbl_w = 50, 10, 20
-        print("\n" + "═" * width)
-        print(f"{'📊 PCA DATA MANIFEST (ε = ' + f'{chosen_eps:.6f}' + ')':^{width}}")
-        print("─" * width)
-        print(f"{'✅ Observations':<{lbl_w}} {':':>{val_w}} {working_data.shape[0]:>{val_w}}")
-        print(f"{'✅ Included Features':<{lbl_w}} {':':>{val_w}} {working_data.shape[1]:>{val_w}}")
-        if excluded_found:
-            print(f"{'🚫 Excluded':<{lbl_w}} {':':>{val_w}} {len(excluded_found):>{val_w}}")
-            for item in excluded_found:
-                print(f"   * {item}")
-        else:
-            print(f"{'🚫 Excluded':<{lbl_w}} {':':>{val_w}} {'None':>{val_w}}")
-        print("═" * width + "\n")
-
-    # ------------------------------------------------------------
-    # 1-B. PCA Fit & Robust Sign Normalization
-    # ------------------------------------------------------------
-    pca = PCA()  # Fit all components; we will use only the first three
-    coords_raw = pca.fit_transform(working_data.values)   # PC scores
-    loadings_raw = pca.components_                        # PC loadings
-    ratios = pca.explained_variance_ratio_                # Variance explained
-    observation_index = working_data.index.values         # Sample identifiers
-
-    # Note: The PCA is fitted to the CLR-transformed data, and the raw loadings and scores are extracted.
-    loadings_norm = []
-    coords_norm   = []
-
-    # Normalize signs so that each PC is oriented consistently:
-    # If the feature with the largest absolute loading is negative,
-    # flip the entire component (loadings + scores).
-    for i in range(len(loadings_raw)):
-        comp = loadings_raw[i].copy()
-        score = coords_raw[:, i].copy()
-
-        # Identify the anchor feature (largest absolute loading)
-        if comp[np.argmax(np.abs(comp))] < 0:
-            comp  *= -1
-            score *= -1
-        # This sign normalization ensures that the direction of each principal 
-        # component is consistent across different runs, epsilon values, and datasets.
-        #  By anchoring the orientation to the feature with the largest absolute loading, 
-        # we create a stable reference point for interpreting the components, which is 
-        # crucial for comparative analyses and visualizations.
-        loadings_norm.append(comp)
-        coords_norm.append(score)
-
-    loadings_norm = np.array(loadings_norm)
-
-    # Order features by PC1 loading for a stable shared y-axis
-    order = pd.Series(loadings_norm[0], index=working_data.columns).sort_values().index
-
-    # ------------------------------------------------------------
-    # 1-C. Modern Plotting (Three Horizontal Bar Charts)
-    # ------------------------------------------------------------
-    sns.set_style("white")
-    fig, axes = plt.subplots(1, 3, figsize=figsize, sharey=True)
-
-    pc_colors = ["#D85A30", "#185FA5", "#51A351"]  # Distinct PC colors
-    neg_color = "#95a5a6"                              # Soft gray for negative loadings
-
-    # Iterate over the first three components and create horizontal bar charts with consistent feature ordering,
-    for i, ax in enumerate(axes):
-        # Reindex to enforce consistent feature ordering
-        ser = pd.Series(loadings_norm[i], index=working_data.columns).reindex(order)
-
-        # Color positive vs negative loadings
-        colors = [pc_colors[i] if val >= 0 else neg_color for val in ser.values]
-
-        # Draw horizontal bars
-        bars = ax.barh(
-            ser.index, ser.values,
-            color=colors, edgecolor="white", lw=0.5
-        )
-
-        # Annotate bars with numeric values
-        ax.bar_label(
-            bars, fmt=label_fmt, padding=5,
-            fontsize=10, fontweight="bold", color="#2c3e50"
-        )
-
-        # Reference vertical line at zero
-        ax.axvline(0, color="#2d3436", lw=1.2, zorder=3)
-
-        # Panel title with variance explained
-        ax.set_title(
-            f"PC{i+1}\n{ratios[i]:.1%} Variance",
-            fontweight="bold", size=14, pad=15
-        )
-
-        # Light grid for readability
-        ax.xaxis.grid(True, ls=":", alpha=0.6)
-        sns.despine(ax=ax, left=True, bottom=False)
-
-        # Y-axis formatting
-        if i == 0:
-            ax.tick_params(axis="y", labelsize=11, left=False, pad=60)
-            plt.setp(ax.get_yticklabels(), fontweight="bold", color="#2c3e50", ha="right")
-        else:
-            ax.tick_params(axis="y", length=0)
-
-    # ------------------------------------------------------------
-    # 1-D. Layout & Spacing Refinement
-    # ------------------------------------------------------------
-    axes[0].set_ylabel("Crime Features", fontweight="bold", size=14, labelpad=160)
-
-    plt.subplots_adjust(left=0.45, wspace=0.15, top=0.85, bottom=0.1)
-
-    plt.suptitle(
-        fr"Principal Component Loadings (PC1-PC3) | $\boldsymbol{{\epsilon}}$ = {chosen_eps:.6f}\n"
-        f"Cumulative Variance: {ratios.sum():.1%}",
-        fontweight="bold", size=18, y=0.98
-    )
-
-    # Optional save
-    if image_save and image_path:
-        fig.savefig(image_path + image_save, dpi=300, bbox_inches='tight')
-
-    # ------------------------------------------------------------
-    # Return all useful PCA artifacts
-    # ------------------------------------------------------------
-    return {
-        "figure": fig,
-        "loadings_raw": loadings_raw,
-        "loadings_norm": loadings_norm,
-        "coords_raw": coords_raw,
-        "coords_norm": np.array(coords_norm).T, 
-        "variance_ratio": ratios,
-        "singular_values": pca.singular_values_,
-        "observation_index": observation_index,
-        "excluded": excluded_found
-    }
-
-
-
-def print_pca_manifest(working_data, chosen_eps, excluded_found, use_emoji=True):
-    """Print PCA data manifest. Keep all formatting decisions in one place."""
-    width = 60
-    lbl_w, val_w = 28, 18
-    
-    if use_emoji:
-        chart, ok, no = '📊', '[+]', '[-]'
-    else:
-        chart, ok, no = '[*]', '[+]', '[-]'
-    
-    header = f"{chart} PCA DATA MANIFEST (ε = {chosen_eps:.0e})"
-    
-    print("\n" + "=" * width)
-    print(header.center(width))
-    print("-" * width)
-    print(f"{ok} {'Observations':<{lbl_w}}: {working_data.shape[0]:>{val_w}}")
-    print(f"{ok} {'Included Features':<{lbl_w}}: {working_data.shape[1]:>{val_w}}")
-    
-    n_excluded = len(excluded_found) if excluded_found else 0
-    print(f"{no} {'Excluded':<{lbl_w}}: {n_excluded:>{val_w}}")
-    for item in (excluded_found or []):
-        print(f"      - {item}")
-    
-    print("=" * width + "\n")
-
-
-# ---------------------------------------------------------------------------
-# 2. PCA stability comparison across epsilon values
+# 2: PCA stability comparison across epsilon values
 # ---------------------------------------------------------------------------
 def compare_pca_stability(
     results,
@@ -755,7 +515,7 @@ def compare_pca_stability(
 
 
 # ---------------------------------------------------------------------------
-# 3. PCA sensitivity visualization across multiple epsilon values
+# 3: PCA sensitivity visualization across multiple epsilon values
 # ---------------------------------------------------------------------------
 def pca_sensitivity_plot(
     results: Dict,
@@ -956,7 +716,7 @@ def pca_sensitivity_plot(
 
 
 # ---------------------------------------------------------------------------
-# 4. Aitchison variance structure visualization across epsilon values
+# 4: Aitchison variance structure visualization across epsilon values
 # ---------------------------------------------------------------------------
 def plot_aitchison(
     clr_data: Mapping[float, pd.DataFrame],
@@ -1321,7 +1081,7 @@ def compute_aitchison_profile(clr_data):
 
 
 # ---------------------------------------------------------------------------
-# 5. PC1 loading stability visualization across epsilon values
+# 5: PC1 loading stability visualization across epsilon values
 # ---------------------------------------------------------------------------
 def plot_pc1_loading_stability(
     clr_data: Mapping[float, pd.DataFrame],
@@ -1578,7 +1338,7 @@ def _compute_pc1_stability(
 
 
 # ---------------------------------------------------------------------------
-# 6. Crime count visualization with a modern data-journalism style
+# 6: Crime count visualization with a modern data-journalism style
 # ---------------------------------------------------------------------------
 def plot_crime_counts(
     esp_results: dict,
@@ -1778,7 +1538,7 @@ def plot_crime_counts(
     return {"series": series, "fig": fig}
 
 # ---------------------------------------------------------------------------
-# 7. Structural break visualization with a three-panel diagnostic layout
+# 7: Structural break visualization with a three-panel diagnostic layout
 # ---------------------------------------------------------------------------
 def plot_structural_break(
     clr_df: pd.DataFrame,
@@ -2051,7 +1811,7 @@ def plot_structural_break(
 
 
 # ---------------------------------------------------------------------------
-# 8. Era-level CLR heatmap visualization with regime-shift deltas
+# 8: Era-level CLR heatmap visualization with regime-shift deltas
 # ---------------------------------------------------------------------------
 def plot_era_heatmaps(data_dict, stat_type='mean', image_path=None, image_name=None, verbose=False):
     """
@@ -2201,3 +1961,332 @@ def plot_era_heatmaps(data_dict, stat_type='mean', image_path=None, image_name=N
         line = "=" * 100
         print(f"\n{line}\n📊 {metric_name.upper()} DATA ANALYSIS ({date_range_str})\n{line}")
         print(df.round(3).to_string())
+
+
+# ---------------------------------------------------------------------------
+# 9: Function to plot PC scores over time with era shading
+# ---------------------------------------------------------------------------
+def plot_pc_scores_over_time(
+    pca_dict: dict,
+    panel_index: pd.DatetimeIndex,
+    era_config: dict = None,
+    n_components: int = 3,
+    figsize: tuple = (14, 12),
+    show_rolling: bool = True,
+    rolling_window: int = 6,
+    title_suffix: str = "",
+    **kwargs
+) -> dict:
+    """
+    Plot PCA component scores over time with shaded eras and rolling trends.
+    """
+    # ------------------------------------------------------------
+    # 9-1: Unified configuration fallback
+    # ------------------------------------------------------------
+    era_config = era_config or kwargs.get('era_boundaries') or {
+        'Pre-COVID' : ('2001-01-01', '2020-03-01', 'blue'),
+        'COVID'     : ('2020-03-01', '2023-01-01', 'red'),
+        'Post-COVID': ('2023-01-01', '2025-12-01', 'green'),
+    }
+
+    # ------------------------------------------------------------
+    # 9-2: Extract PCA data and validate dimensions
+    # ------------------------------------------------------------
+    coords, ratios = pca_dict['coords_norm'], pca_dict['variance_ratio']
+    n_components = min(n_components, coords.shape[1])
+    
+    # Validate that panel_index length matches the number of observations in coords
+    if len(panel_index) != coords.shape[0]:
+        raise ValueError(f"panel_index length ({len(panel_index)}) != observations ({coords.shape[0]})")
+
+    # ------------------------------------------------------------
+    # 9-3: Prepare the scores DataFrame for plotting
+    # ------------------------------------------------------------
+    scores = pd.DataFrame(
+        coords[:, :n_components],
+        index=pd.DatetimeIndex(panel_index),
+        columns=[f'PC{i+1}' for i in range(n_components)]
+    ).sort_index()
+
+    # ------------------------------------------------------------
+    # 9-4: Pre-process era configurations for efficient plotting
+    # ------------------------------------------------------------
+    processed_eras = []
+    # Ensure eras are sorted by their start date for correct layering
+    sorted_keys = sorted(era_config.keys(), key=lambda k: pd.Timestamp(era_config[k][0]))
+    # Determine the overall time span of the data for proper handling of open-ended eras
+    t_min, t_max = scores.index.min(), scores.index.max()
+
+    # Process each era configuration into a standardized format for plotting
+    for idx, key in enumerate(sorted_keys):
+        start, end, color_name = era_config[key]
+        t_start = t_min if idx == 0 else pd.Timestamp(start)
+        t_end = t_max if idx == len(sorted_keys) - 1 else pd.Timestamp(end)
+        processed_eras.append((key.upper(), t_start, t_end, color_name))
+
+    # ------------------------------------------------------------
+    # 9-5: Set up the figure and axes with a clean, journalistic style
+    # ------------------------------------------------------------
+    sns.set_theme(style='white', font='sans-serif')
+    fig, axes = plt.subplots(n_components, 1, figsize=figsize, sharex=True, gridspec_kw={'hspace': 0.85})
+    axes = [axes] if n_components == 1 else list(axes)
+    
+    # Define a cohesive color palette for the PCs and a neutral background color for the eras
+    pc_colors, bg_neutral = ['#D35400', '#2C3E50', '#27AE60', '#7F8C8D'], '#2C3E50'
+
+    # ------------------------------------------------------------
+    # 9-6: Plotting loop for each principal component with era 
+    # shading and rolling trends
+    # ------------------------------------------------------------
+    for i, ax in enumerate(axes):
+        pc = f'PC{i+1}'
+        series = scores[pc]
+        color = pc_colors[i % len(pc_colors)]
+
+        # Background anchor baseline and data lines
+        ax.axhline(0, color=bg_neutral, lw=0.6, alpha=0.2, zorder=1)
+        ax.plot(series.index, series.values, color=color, lw=1.1, alpha=0.42, label='Monthly Noise', zorder=2)
+        
+        # Soft fill under the line for visual depth
+        if show_rolling and len(series) >= rolling_window:
+            roll = series.rolling(rolling_window, center=True).mean()
+            ax.plot(roll.index, roll.values, color=color, lw=2.8, alpha=0.95, solid_capstyle='round', label=f'{rolling_window}-Month Trend', zorder=3)
+
+        # Plot cleanly pre-calculated background eras and centered labels
+        y_min, y_max = ax.get_ylim()
+        text_y = y_max + ((y_max - y_min) * 0.02)
+        # Iterate through the pre-processed eras to draw shaded spans and vertical lines with centered labels
+        for label, t_start, t_end, color_name in processed_eras:
+            ax.axvspan(t_start, t_end, color=color_name, alpha=0.15, zorder=0)
+            ax.axvline(t_start, color=color_name, ls='--', lw=1.3, alpha=0.5, zorder=1)
+            ax.text(t_start, text_y, label, fontsize=9, color=color_name, fontweight='bold', va='bottom', ha='center')
+        
+        # Terminal far-right border line cap
+        ax.axvline(t_max, color=processed_eras[-1][3], ls='--', lw=1.3, alpha=0.5, zorder=1)
+
+        # Clean Left-Aligned Subplot Titles with Deep Padding
+        top_feats = pca_dict.get('pc_positive_top', {}).get(pc, [])
+        title_text = f"{pc} ({ratios[i]:.1%} Explained Variance)" + (f"\n  Key Indicators: {', '.join(top_feats)}" if top_feats else "")
+        ax.set_title(title_text, fontweight='bold', fontsize=11, color=bg_neutral, loc='left', pad=32, linespacing=1.4)
+
+        # Labels, Minimalist Grid lines, and Legend placement UNDERNEATH the axis floor
+        ax.set_ylabel('Component Score', fontsize=10, color=bg_neutral, fontweight='medium')
+        ax.tick_params(colors='#7F8C8D', labelsize=9.5)
+        ax.yaxis.grid(True, linestyle=':', alpha=0.4, color='#BDC3C7')
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.22), ncol=2, frameon=False, fontsize=8.5, handletextpad=0.5)
+        sns.despine(ax=ax, left=True, bottom=True)
+
+    # Global x-axis label centered under the last subplot with deep padding
+    axes[-1].set_xlabel('Timeline', fontweight='bold', fontsize=11, color=bg_neutral, labelpad=38)
+    
+    # ------------------------------------------------------------
+    # 9-7: Final suptitle and layout adjustments for a polished presentation
+    # ------------------------------------------------------------
+    plt.suptitle(
+        f'Principal Component Analytics Over Time{title_suffix.upper()}\n'
+        f'Total System Variance Captured (PC1–PC{n_components}): {sum(ratios[:n_components]):.1%}',
+        fontweight='bold', size=14, y=0.98, color=bg_neutral, ha='center'
+    )
+    plt.subplots_adjust(top=0.84, bottom=0.12, left=0.08, right=0.95, hspace=0.85)
+
+    return {'figure': fig, 'axes': axes, 'scores_df': scores}
+
+
+# ---------------------------------------------------------------------------
+# 10: Optimized per-category distribution audit for CLR-transformed data with severity ranking
+# ---------------------------------------------------------------------------
+def check_clr_distributions(
+    clr_df: pd.DataFrame,
+    raw_counts: pd.DataFrame | None = None,
+    epsilon: float | None = None,
+    n_cols: int = 5,
+    flag_skew: float = 1.5,
+    flag_kurtosis: float = 5.0
+) -> pd.DataFrame:
+    """
+    Perform an optimized per‑category distribution audit on a CLR‑transformed dataset.
+
+    This function evaluates the distributional behavior of each crime category
+    after CLR transformation, identifying categories whose distributions appear
+    distorted (e.g., heavy tails, strong skewness, or abnormal shape). These
+    distortions often arise from sparse raw counts interacting with the chosen
+    epsilon. The function:
+
+    - Computes skewness, excess kurtosis, Shapiro–Wilk p‑values, and zero‑rates.
+    - Flags categories exceeding user‑defined skew/kurtosis thresholds.
+    - Plots histograms with normal overlays, ordered worst‑first by severity.
+    - Highlights flagged categories visually.
+    - Returns a diagnostics DataFrame summarizing all metrics.
+
+    Parameters
+    -------
+    clr_df : pd.DataFrame
+        CLR‑transformed matrix (rows = months, columns = categories).
+    raw_counts : pd.DataFrame or None
+        Source for zero‑rates. Two accepted forms:
+          - LONG filled_df with an 'is_zero_after_fill' flag and a
+            'fbi_code_desc' column → zero‑rate read from the flag (authoritative).
+          - WIDE count matrix aligned with clr_df → zeros detected via (== 0).
+        If None, zero‑rate is NaN.
+    epsilon : float or None
+        Epsilon used in CLR transformation (display only).
+    n_cols : int
+        Number of subplot columns in the histogram grid.
+    flag_skew : float
+        Absolute skewness threshold for flagging.
+    flag_kurtosis : float
+        Excess kurtosis threshold for flagging.
+
+    Returns
+    ----
+    pd.DataFrame
+        Diagnostics table for each category, excluding internal cache fields.
+    """
+
+    # Extract category names and compute number of rows in the subplot grid
+    cats = clr_df.columns.tolist()
+    n_rows = int(np.ceil(len(cats) / n_cols))
+
+    # ------------------------------------------------------------
+    # 10-1: Compute Per‑Category Diagnostics (Single‑Pass Loop)
+    # ------------------------------------------------------------
+    rows = []
+    # We loop through each category once, computing all diagnostics and
+    # caching the raw data for plotting. This minimizes redundant passes
+    # over the data and ensures efficient computation even for larger datasets.
+    for c in cats:
+        # Pull raw CLR values as a NumPy array for speed
+        x = clr_df[c].to_numpy(dtype=float)
+        x = x[~np.isnan(x)]  # remove missing months
+
+        if len(x) == 0:
+            continue  # skip empty categories
+
+        # Basic distribution statistics
+        mu, sd = float(np.mean(x)), float(np.std(x))
+        skew = float(stats.skew(x))
+        exkurt = float(stats.kurtosis(x))  # excess kurtosis
+
+        # Shapiro–Wilk normality test (safe for ~300 points)
+        try:
+            _, sh_p = stats.shapiro(x)
+        except Exception:
+            sh_p = np.nan
+
+        # Compute zero‑rate. If a LONG filled_df with the is_zero_after_fill
+        # flag is provided, use it (authoritative). Otherwise fall back to
+        # detecting zeros in a WIDE count matrix.
+        if raw_counts is None:
+            zero_rate = np.nan
+        elif 'is_zero_after_fill' in raw_counts.columns:
+            cat_rows = raw_counts[raw_counts['fbi_code_desc'] == c]
+            n_months = len(cat_rows)
+            zero_rate = (float(cat_rows['is_zero_after_fill'].sum()) / n_months * 100.0
+                         if n_months > 0 else np.nan)
+        else:
+            zero_rate = float((raw_counts[c] == 0).values.mean()) * 100.0
+
+        # Flag categories with problematic distribution shape
+        flagged = (abs(skew) > flag_skew) or (exkurt > flag_kurtosis)
+
+        # Store metrics + cached arrays for plotting
+        rows.append({
+            'category': c,
+            'mean_clr': mu,
+            'std_clr': sd,
+            'skew': skew,
+            'excess_kurtosis': exkurt,
+            'shapiro_p': float(sh_p),
+            'zero_rate_%': zero_rate,
+            'flagged': flagged,
+            '_severity': abs(skew) + max(exkurt, 0),  # ranking metric
+            '_x_data': x,      # cached data for plotting
+            '_xmin': x.min(),  # cached min
+            '_xmax': x.max()   # cached max
+        })
+
+    # Sort categories worst‑first by severity score
+    processed_records = sorted(rows, key=lambda k: k['_severity'], reverse=True)
+
+    # --------------------------------------------
+    # 10-2: Render Grid Infrastructure
+    # --------------------------------------------
+    plt.rcParams['font.family'] = 'sans-serif'
+
+    # Set up the grid of subplots with a clean, journalistic style
+    fig, axes = plt.subplots(
+        n_rows, n_cols,
+        figsize=(n_cols * 3.2, n_rows * 2.6),
+        facecolor="#FDFDFD"
+    )
+    axes = np.atleast_1d(axes).ravel()
+
+    # Color palette for consistent styling
+    C_HIST = '#2E4057'
+    C_NORM = '#D6604F'
+    C_FLAG_BG = '#FDF2F2'
+    C_TEXT = '#1A1A1A'
+    C_TEXT_FLAG = '#922B21'
+
+    # Plot each category in severity order
+    for idx, meta in enumerate(processed_records):
+        ax = axes[idx]
+        x = meta['_x_data']
+        is_flagged = meta['flagged']
+
+        # Highlight flagged categories with background color
+        ax.set_facecolor(C_FLAG_BG if is_flagged else 'white')
+
+        # Histogram
+        ax.hist(
+            x, bins=22, density=True,
+            color=C_HIST, alpha=0.75,
+            edgecolor='white', linewidth=0.5, zorder=3
+        )
+
+        # Normal overlay using cached limits
+        xs = np.linspace(meta['_xmin'], meta['_xmax'], 200)
+        ax.plot(xs, stats.norm.pdf(xs, meta['mean_clr'], meta['std_clr']),
+                color=C_NORM, lw=1.8, zorder=4)
+
+        # Clean axis styling
+        ax.tick_params(labelsize=8, colors='#555555', length=0)
+        ax.grid(axis='y', linestyle=':', color='#E0E0E0', alpha=0.6, zorder=1)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+        # Title with skew/kurtosis summary
+        title_color = C_TEXT_FLAG if is_flagged else C_TEXT
+        font_w = 'bold' if is_flagged else 'normal'
+        ax.set_title(
+            f"{meta['category'][:20]}\nskew: {meta['skew']:.2f} | kurt: {meta['excess_kurtosis']:.1f}",
+            fontsize=9, color=title_color, fontweight=font_w, pad=6
+        )
+
+    # Turn off unused subplot cells
+    for ax in axes[len(processed_records):]:
+        ax.axis('off')
+
+    # --------------------------------------------
+    # 10-3: Global Figure Title & Layout
+    # --------------------------------------------
+    eps_str = f" (ε = {epsilon:.6g})" if epsilon is not None else ""
+
+    fig.suptitle(
+        f"Per-Category CLR Structural Distributions{eps_str}\n"
+        f"Solid Overlay: Normal Fit  |  Highlighted Panels: Flagged (|Skew| > {flag_skew} or Kurtosis > {flag_kurtosis})",
+        fontsize=14, fontweight='bold', color='#222222', y=0.98
+    )
+
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.91, hspace=0.35, wspace=0.25)
+
+    plt.show()
+    plt.close(fig)
+
+    # Remove cached plotting fields before returning diagnostics
+    diag = pd.DataFrame(processed_records).drop(
+        columns=['_severity', '_x_data', '_xmin', '_xmax']
+    )
+
+    return diag
