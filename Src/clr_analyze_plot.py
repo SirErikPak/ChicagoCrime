@@ -13,6 +13,7 @@ from numpy.linalg import norm
 from scipy.linalg import subspace_angles
 from scipy import stats
 
+
 # ---------------------------------------------------------------------
 # 1: Fancy PCA Plot Bundle
 # ---------------------------------------------------------------------
@@ -1537,8 +1538,9 @@ def plot_crime_counts(
 
     return {"series": series, "fig": fig}
 
+
 # ---------------------------------------------------------------------------
-# 7: Structural break visualization with a three-panel diagnostic layout
+# 7: Structural break visualization with deep-contrast era shading and delta annotation
 # ---------------------------------------------------------------------------
 def plot_structural_break(
     clr_df: pd.DataFrame,
@@ -1551,263 +1553,265 @@ def plot_structural_break(
     image_path: Optional[str] = None,
     image_name: Optional[str] = None,
     verbose: bool = True
-) -> None:
+) -> Dict[str, Any]:
     """
-    Visualize a structural break in a CLR-transformed crime time series using
-    a three-panel diagnostic layout.
+    Visualize a structural break in a CLR‑transformed time series using a
+    high‑contrast, publication‑grade layout.
 
-    The figure includes:
-    1. **Time-Series Panel**  
-       - Raw CLR signal  
-       - Pre- and post-break means  
-       - Rolling mean (default 12 months)  
-       - Annotated break point (e.g., Zivot–Andrews)  
-       - Optional background “era” shading (e.g., Pre-COVID / COVID / Post-COVID)
+    This function produces a two‑panel diagnostic figure:
+      - A time‑series panel showing the raw CLR signal, rolling mean,
+        pre‑ and post‑break means, the structural break point, and
+        optional era shading (Pre‑COVID, COVID, Post‑COVID).
+      - A density comparison panel contrasting pre‑break and post‑break
+        CLR distributions.
 
-    2. **Distribution Panel**  
-       - Density comparison of pre- vs post-break CLR values  
-       - Histogram + KDE overlays for both segments
-
-    3. **Footer Panel**  
-       - Compact summary of ZA statistic, adjusted p-value, and decision status
+    The visualization is optimized for clarity, interpretability, and
+    presentation quality. It highlights regime shifts, annotates the
+    magnitude of the mean shift, and optionally embeds Zivot–Andrews
+    test statistics and adjusted p‑values.
 
     Parameters
     ----------
     clr_df : pd.DataFrame
-        DataFrame indexed by datetime, containing CLR-transformed crime series.
+        CLR‑transformed dataset indexed by datetime, with columns
+        representing crime categories.
     category : str
-        Column name in `clr_df` to analyze.
+        The category/column to visualize.
     break_date : str
-        Date string (YYYY-MM or YYYY-MM-DD) marking the structural break.
+        The structural break date (YYYY‑MM or full timestamp). Must fall
+        within the series timeline.
     window : int, default 12
-        Rolling window size for smoothing the time series.
+        Rolling‑mean window size for smoothing the CLR signal.
     za_stat : float, optional
         Zivot–Andrews test statistic for the break point.
     za_p_adj : float, optional
-        Adjusted p-value for the ZA test. If missing or NaN, the break is
-        treated as statistically unreliable.
+        Adjusted p‑value for the Zivot–Andrews test.
     era_boundaries : dict, optional
-        Mapping of era labels → boundary dates. Must contain exactly 2 entries,
-        defining the boundaries between 3 eras (e.g., Pre-COVID, COVID, Post-COVID).
-        Used to draw background shading.
-        Example:
-            {"pre": "2020-03", "covid": "2023-01"}
+        Dictionary with keys {'Pre-COVID', 'COVID'} mapping to boundary
+        dates. Used to shade eras in the time‑series panel.
     image_path : str, optional
-        Directory path prefix for the saved figure. Concatenated directly with
-        `image_name`, so should end with the appropriate path separator.
+        Directory path for saving the figure.
     image_name : str, optional
-        Filename for the saved figure. Both `image_path` and `image_name` must
-        be set for saving to occur.
-
+        File name (without extension) for saving the figure.
     verbose : bool, default True
-        Whether to print a terminal summary of segment statistics.
+        If True, prints confirmation when the figure is saved.
 
     Returns
     -------
-    None
-        The function displays the figure and optionally saves it.
+    dict
+        A dictionary containing:
+            'fig'           : The matplotlib Figure object.
+            'ax_time_series': The main time‑series axis.
+            'ax_density'    : The density comparison axis.
+
+    Notes
+    -----
+    - The function automatically converts the index to a DatetimeIndex
+      if needed.
+    - Era shading is optional and only applied when boundaries are
+      provided.
+    - The function is designed for high‑resolution export and
+      presentation‑quality output.
     """
-    # check inputs and provide informative error messages
-    if category not in clr_df.columns:
-        raise KeyError(
-            f"Column '{category}' not found in clr_df. "
-            f"Available: {list(clr_df.columns)[:5]}..."
-        )
-    try:
-        break_dt = pd.Timestamp(break_date)
-    except (ValueError, TypeError) as e:
-        raise ValueError(f"Invalid break_date '{break_date}': {e}")
+    # ------------------------------------------------------------
+    # 7-1: Slicing & Metric Prep
+    # ------------------------------------------------------------
+    series = clr_df[category].dropna()
+    if not isinstance(series.index, pd.DatetimeIndex):
+        series.index = pd.to_datetime(series.index)
+
+    # Validate break_date is within the series timeline   
+    idx = series.index
+    idx_min, idx_max = idx.min(), idx.max()
     
-    # Check era boundaries if provided
-    if era_boundaries is not None and len(era_boundaries) != 2:
-        raise ValueError(
-            f"era_boundaries must contain exactly 2 entries (defining 3 eras), "
-            f"got {len(era_boundaries)}"
-        )
+    # Convert break_date to Timestamp for comparison
+    t_break = pd.to_datetime(break_date)
+    if t_break < idx_min or t_break > idx_max:
+        raise ValueError(f"Break date {break_date} falls outside the dataset timeline.")
 
-    mpl.rcParams['font.family'] = 'DejaVu Sans'
-    mpl.rcParams['font.sans-serif'] = ['DejaVu Sans']
-    # ------------------------------------------------------------
-    # 7-1. DATA PREPARATION
-    # ------------------------------------------------------------
-    series = clr_df[category]
+    # Split the series into pre- and post-break segments
+    pre_break = series[idx < t_break]
+    post_break = series[idx >= t_break]
+    
+    # Calculate means and rolling mean for the main panel
+    mean_pre, mean_post = pre_break.mean(), post_break.mean()
+    rolling_smoothed = series.rolling(window=window, center=True).mean()
+    delta_shift = mean_post - mean_pre
 
-    # Split into pre- and post-break segments
-    pre_full = series[:break_dt]
-    post_full = series[break_dt:]
+    # --------------------------------------------
+    # 7-2: Set up the figure and axes with a clean, journalistic style
+    # --------------------------------------------
+    plt.rcParams['font.family'] = 'sans-serif'
+    
+    fig, (ax1, ax2) = plt.subplots(
+        nrows=1, ncols=2, 
+        figsize=(19, 6.5), 
+        gridspec_kw={'width_ratios': [2.4, 1]},
+        facecolor="white"
+    )
 
-    # Basic descriptive statistics
-    stats_pre = pre_full.agg(['mean', 'std', 'count'])
-    stats_post = post_full.agg(['mean', 'std', 'count'])
-    delta = stats_post['mean'] - stats_pre['mean']
+    # Core palette mappings
+    C_RAW, C_TREND = '#707B7C', '#0F2C59'
+    C_PRE, C_POST, C_BREAK_LINE = '#0B4619', '#7B1113', '#801515'
 
-    # Rolling mean for trend smoothing
-    series_rolling = series.rolling(window=window, center=True).mean()
-    # Format ZA statistic and p-value for display
-    za_f = f"{za_stat:.3f}" if za_stat is not None else "0.000"
-    sparse = (za_p_adj is None) or pd.isna(za_p_adj)
-    # If the p-value is missing or NaN, we treat it as unreliable 
-    # due to sparse data, and display "N/A (SPARSE)" instead of a 
-    # numeric value. The status is also marked as "UNRELIABLE (SPARSE)" 
-    # in this case. Otherwise, we display the adjusted p-value and determine 
-    # whether to reject or fail to reject the null hypothesis based on the 0.05 threshold. 
-    p_val_disp = "N/A (SPARSE)" if sparse else f"{za_p_adj:.4f}"
-    status = ("UNRELIABLE (SPARSE)" if sparse else (r"REJECT $H_0$" if za_p_adj < 0.05 else "FAIL TO REJECT"))
-    # ------------------------------------------------------------
-    # 7-2. TERMINAL REPORT (OPTIONAL)
-    # ------------------------------------------------------------
-    if verbose:
-        print(f"\n{'='*85}")
-        print(f"{f' STRUCTURAL BREAK DIAGNOSTIC: {category} ':^85}")
-        print(f"{'='*85}")
-        print(f"  ▶ BREAK POINT     : {break_dt.strftime('%Y-%m')}")
-        print(f"  ▶ ZA STATISTIC    : {za_f}")
-        print(f"  ▶ ADJ P-VALUE     : {p_val_disp} | STATUS: {status.replace('$H_0$', 'H₀')}")
+    # --------------------------------------------
+    # 7-3: Panel 1: Time Series with Rolling Mean, Break Point, and Era Shading
+    # --------------------------------------------
+    ax1.plot(idx, series.values, color=C_RAW, alpha=0.45, lw=0.8, label="Raw CLR Signal", zorder=2)
+    ax1.plot(idx, rolling_smoothed.values, color=C_TREND, lw=2.7, label=f"{window}m Rolling Mean", zorder=4)
+    
+    # High-contrast horizontal lines for pre/post means and vertical line for break point
+    ax1.hlines(mean_pre, idx_min, t_break, colors=C_PRE, linestyles='-', lw=2.5, label="Pre-Break Mean", zorder=3)
+    ax1.hlines(mean_post, t_break, idx_max, colors=C_POST, linestyles='-', lw=2.5, label="Post-Break Mean", zorder=3)
+    ax1.axvline(t_break, color=C_BREAK_LINE, linestyle='-', lw=1.8, label="ZA Break Point", zorder=4)
 
-        # Segment summary table
-        stats_df = pd.DataFrame(
-            {"PRE-BREAK": pre_full.describe(),
-             "POST-BREAK": post_full.describe()}
-        ).T[["count", "mean", "std", "min", "max"]]
-
-        print(f"\n  [ SEGMENT STATISTICS ]")
-        print("  " + stats_df.to_string().replace("\n", "\n  "))
-        print(f"\n  ▶ MEAN SHIFT (Δ)  : {delta:+.4f}")
-        print(f"{'='*85}\n")
-
-    # ------------------------------------------------------------
-    # 7-3. FIGURE LAYOUT
-    # ------------------------------------------------------------
-    sns.set_theme(style="white", context="paper")
-    fig = plt.figure(figsize=(18, 14))
-
-    # Three-panel layout: time series, distribution, footer
-    gs = fig.add_gridspec(3, 1, height_ratios=[1.2, 0.8, 0.05], hspace=0.55)
-    ax_ts = fig.add_subplot(gs[0])
-    ax_dist = fig.add_subplot(gs[1])
-    ax_footer = fig.add_subplot(gs[2])
-    ax_footer.axis("off")
-
-    # ------------------------------------------------------------
-    # 7-3A. OPTIONAL ERA BACKGROUND SHADING
-    # ------------------------------------------------------------
-    era_proxies = []
+    # --------------------------------------------
+    # 7-4: Era shading with high-contrast labels 
+    #       centered within each era span
+    # --------------------------------------------
     if era_boundaries:
-        bg_colors = ["#DDE4FF", "#FFE4E6", "#DCFCE7"]
-        sorted_eras = sorted(era_boundaries.items(), key=lambda x: pd.Timestamp(x[1]))
+        t_pre_end = max(idx_min, min(pd.to_datetime(era_boundaries.get('Pre-COVID', '2020-02')), idx_max))
+        t_covid_end = max(t_pre_end, min(pd.to_datetime(era_boundaries.get('COVID', '2022-12')), idx_max))
+        
+        # Define eras with their respective colors for shading
+        eras_to_plot = [
+            ("Pre-COVID", idx_min, t_pre_end, "#BCD2EE"),
+            ("COVID", t_pre_end, t_covid_end, "#F8CECC"),
+            ("Post-COVID", t_covid_end, idx_max, "#D5E8D4")
+        ]
+        
+        # Use the x-axis transform to position era labels in data coordinates but aligned with the x-axis
+        xaxis_transform = ax1.get_xaxis_transform()
+        for name, start, end, color in eras_to_plot:
+            if start < end:
+                ax1.axvspan(start, end, color=color, alpha=0.95, zorder=1)
+                mid_point = start + (end - start) / 2
+                ax1.text(mid_point, 0.92, name.upper(), fontsize=10.5, 
+                         color='#1C2833', fontweight='bold', ha='center', va='center',
+                         transform=xaxis_transform, zorder=5)
 
-        # Pre-COVID
-        ax_ts.axvspan(series.index[0], pd.Timestamp(sorted_eras[0][1]),
-                      color=bg_colors[0], alpha=1.0, zorder=0)
-        era_proxies.append(plt.Rectangle((0, 0), 1, 1, fc=bg_colors[0], label="Era: Pre-COVID"))
+    # Add the break date label above the vertical line with high contrast and bold styling
+    ax1.text(t_break, 1.01, f"{break_date}", color=C_BREAK_LINE, fontsize=9.5, 
+             fontweight='bold', ha='center', transform=ax1.get_xaxis_transform(), zorder=5)
 
-        # COVID
-        ax_ts.axvspan(pd.Timestamp(sorted_eras[0][1]), pd.Timestamp(sorted_eras[1][1]),
-                      color=bg_colors[1], alpha=1.0, zorder=0)
-        era_proxies.append(plt.Rectangle((0, 0), 1, 1, fc=bg_colors[1], label="Era: COVID"))
+    # Annotate the delta shift with an arrow pointing to the post-break mean, 
+    # using a try-except block to handle potential issues with missing data
+    try:
+        target_y = rolling_smoothed.dropna().loc[rolling_smoothed.dropna().index >= t_break].values[0]
+        ax1.annotate(
+            f"Δ Shift: {delta_shift:.3f}",
+            xy=(t_break, target_y),
+            xytext=(-75, 0),
+            textcoords='offset points',
+            arrowprops=dict(arrowstyle="-|>", color=C_BREAK_LINE, lw=1.2),
+            bbox=dict(boxstyle="square,pad=0.3", fc="white", ec=C_BREAK_LINE, alpha=0.95, lw=0.8),
+            color=C_BREAK_LINE, fontsize=10, fontweight='bold', va='center', zorder=6
+        )
+    except Exception:
+        pass
 
-        # Post-COVID
-        ax_ts.axvspan(pd.Timestamp(sorted_eras[1][1]), series.index[-1],
-                      color=bg_colors[2], alpha=1.0, zorder=0)
-        era_proxies.append(plt.Rectangle((0, 0), 1, 1, fc=bg_colors[2], label="Era: Post-COVID"))
+    # ---------------------------------------------
+    # 7-5: Styling for axes, grid, ticks, and legend
+    # ---------------------------------------------
+    fig.suptitle(category.upper(), fontsize=16, fontweight='bold', x=0.06, ha='left', y=0.96)
+    ax1.set_ylabel("CLR INTENSITY", fontsize=10, fontweight='bold', color='#333333')
+    ax1.set_xlabel("YEAR-MONTH", fontsize=10, fontweight='bold', color='#333333')
+    
+    # Custom grid lines with a subtle, dotted style and a light gray color for a clean look
+    ax1.grid(True, linestyle=':', alpha=0.6, color='#95A5A6', zorder=1.5)
+    
+    # Remove top and right spines for a cleaner look, and set custom ticks with formatted labels
+    for ax in (ax1, ax2):
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
 
-    # ------------------------------------------------------------
-    # 7-3B. TIME-SERIES PANEL
-    # ------------------------------------------------------------
-    ax_ts.grid(True, axis="both", color="#D1D5DB", linestyle="--", linewidth=0.8, zorder=1)
+    # Set custom x-ticks to show every 3 months with formatted labels, ensuring 
+    # they are spaced appropriately for readability
+    tick_indices = np.linspace(0, len(idx) - 1, 9, dtype=int)
+    ax1.set_xticks(idx[tick_indices])
+    ax1.set_xticklabels([d.strftime('%Y-%m') for d in idx[tick_indices]], fontsize=8.5, color='#333333')
 
-    # Raw CLR signal
-    ax_ts.plot(series.index, series.values, color="#374151", linewidth=0.6, alpha=0.3, zorder=2)
-    raw_proxy = plt.Line2D([0], [0], color="#374151", linewidth=0.8, alpha=0.9, label="Raw CLR Signal")
+    # ----------------------------------------------------
+    # 7-6: Panel 2: Density plots for pre- and post-break 
+    #       with high-contrast styling
+    # -----------------------------------------------------
+    sns.kdeplot(pre_break, ax=ax2, color=C_PRE, fill=True, alpha=0.15, lw=2, label="Pre-Break")
+    sns.kdeplot(post_break, ax=ax2, color=C_POST, fill=True, alpha=0.15, lw=2, label="Post-Break")
+    
+    # Set high-contrast titles and labels for the density panel, with a clean grid for reference
+    ax2.set_title("DENSITY PROFILE", fontweight='bold', fontsize=11, loc='left', pad=12)
+    ax2.set_xlabel("CLR Value Space", fontsize=9, fontweight='bold')
+    ax2.set_ylabel("")
+    ax2.grid(True, linestyle=':', alpha=0.4, color='#BDC3C7')
 
-    # Pre- and post-break means
-    ax_ts.hlines(stats_pre["mean"], series.index[0], break_dt,
-                 color="#064E3B", linewidth=2.0, label="Pre-Break Mean", zorder=3)
-    ax_ts.hlines(stats_post["mean"], break_dt, series.index[-1],
-                 color="#7F1D1D", linewidth=2.0, label="Post-Break Mean", zorder=3)
-
-    # Rolling mean
-    roll_line = ax_ts.plot(series_rolling.index, series_rolling.values,
-                           color="#1E3A8A", linewidth=2.5, label="12m Rolling Mean", zorder=10)
-
-    # Break point
-    ax_ts.axvline(break_dt, color="#991B1B", linestyle="-", linewidth=1.5,
-                  label="ZA Break Point", zorder=11)
-    ax_ts.text(break_dt, ax_ts.get_ylim()[1], f" {break_dt.strftime('%Y-%m')}",
-               color="#991B1B", fontweight="900", fontsize=11, va="bottom", zorder=12)
-
-    # Annotated mean shift
-    y_mid = (stats_pre["mean"] + stats_post["mean"]) / 2
-    ax_ts.annotate(
-        f"Δ Shift: {delta:+.3f}",
-        xy=(break_dt, y_mid),
-        xytext=(-30, 0),
-        textcoords="offset points",
-        arrowprops=dict(arrowstyle="->", color="#991B1B", lw=1.5),
-        fontsize=13, fontweight="900", color="#991B1B",
-        ha="right", va="center",
-        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="#D1D5DB", lw=0.5),
-        zorder=100
+    # ------------------------------------------------------
+    # 7-7: Legend handling for both panels with a clean, 
+    #      non-overlapping layout
+    # ------------------------------------------------------
+    by_label_ax1 = dict(zip(*reversed(ax1.get_legend_handles_labels())))
+    ax1.legend(
+        by_label_ax1.values(), by_label_ax1.keys(),
+        bbox_to_anchor=(1.02, 1.0), loc='upper left', 
+        frameon=True, facecolor='white', edgecolor='#E0E0E0', fontsize=9.5
+    )
+    
+    # For the density plot, we ensure the legend is placed in a way that 
+    # does not overlap with the main time series panel, using a similar 
+    # approach to extract unique labels and handles.
+    by_label_ax2 = dict(zip(*reversed(ax2.get_legend_handles_labels())))
+    ax2.legend(
+        by_label_ax2.values(), by_label_ax2.keys(),
+        bbox_to_anchor=(1.1, 1.10), loc='upper left', 
+        frameon=False, fontsize=9.5
     )
 
-    # Titles and ticks
-    ax_ts.set_title(category.upper(), loc="left", fontsize=20, fontweight="900", pad=35)
-    ax_ts.set_xlabel("YEAR-MONTH", fontsize=10, fontweight="bold")
-    ax_ts.set_ylabel("CLR INTENSITY", fontsize=10, fontweight="bold")
-
-    tick_pos = np.linspace(0, len(series) - 1, 10, dtype=int)
-    ax_ts.set_xticks(series.index[tick_pos])
-    ax_ts.set_xticklabels([d.strftime("%Y-%m") for d in series.index[tick_pos]],
-                          fontsize=9, fontweight="bold")
-
-    # Legend
-    ax_ts.legend(
-        handles=era_proxies + [raw_proxy] + roll_line +
-                [plt.Line2D([], [], color="#064E3B", label="Pre-Break Mean"),
-                 plt.Line2D([], [], color="#7F1D1D", label="Post-Break Mean"),
-                 plt.Line2D([], [], color="#991B1B", label="ZA Break Point")],
-        loc="upper left", bbox_to_anchor=(1.02, 1),
-        frameon=True, framealpha=1.0, edgecolor="#D1D5DB", fontsize=9
+    # ------------------------------------------------------
+    # 7-8: Annotate the structural break insights in a 
+    #      high-contrast text box
+    # ------------------------------------------------------
+    status_text = "SIGNIFICANT SHIFT" if (za_p_adj is not None and za_p_adj <= 0.05) else "STABLE / INSIGNIFICANT"
+    stat_box_str = (
+        f": STRUCTURAL BREAK INSIGHTS :\n"
+        f"─────────────────────────────\n"
+        f"• Break Identified  : {break_date}\n"
+        f"• ZA Test Statistic : {f'{za_stat:.3f}' if za_stat is not None else 'N/A'}\n"
+        f"• Adjusted p-value  : {f'{za_p_adj:.4f}' if za_p_adj is not None else 'N/A'}\n"
+        f"• Regime Status     : {status_text}"
+        f"\n\n{'::: SEGMENT STATISTICS :::':^48}\n"
+        f"{'──────────────────────────':^49}\n" 
+        f"              {'count':>6} {'mean':>6} {'std':>5} {'min':>6} {'max':>6}\n"
+        f"PRE-BREAK   {len(pre_break):>8.1f} {mean_pre:>6.2f} {pre_break.std():>6.2f} {pre_break.min():>6.2f} {pre_break.max():>6.2f}\n"
+        f"POST-BREAK  {len(post_break):>8.1f} {mean_post:>6.2f} {post_break.std():>6.2f} {post_break.min():>6.2f} {post_break.max():>6.2f}\n\n"
+        f"  ▶ MEAN SHIFT (Δ)  : {delta_shift:.4f}"
     )
+    
+    # Place the annotation box in the lower right corner of the figure, ensuring 
+    # it does not overlap with the main panels
+    fig.text(0.725, 0.38, stat_box_str, fontsize=9, fontfamily='monospace', 
+             color='#1A1A1A', verticalalignment='top',
+             bbox=dict(boxstyle='round,pad=0.6', facecolor='white', edgecolor='#E0E0E0', alpha=0.95, lw=0.8))
 
-    # ------------------------------------------------------------
-    # 7-3C. DISTRIBUTION PANEL
-    # ------------------------------------------------------------
-    sns.histplot(pre_full, ax=ax_dist, color="#064E3B", alpha=0.3, stat="density")
-    sns.kdeplot(pre_full, ax=ax_dist, color="#064E3B", linewidth=2.0, label="Pre-Break Dist")
+    # Final layout adjustments to ensure a polished presentation and optimal spacing
+    plt.subplots_adjust(left=0.06, right=0.71, top=0.86, bottom=0.12, wspace=0.45)
 
-    sns.histplot(post_full, ax=ax_dist, color="#7F1D1D", alpha=0.3, stat="density")
-    sns.kdeplot(post_full, ax=ax_dist, color="#7F1D1D", linewidth=2.0, label="Post-Break Dist")
-
-    ax_dist.set_xlabel("CLR VALUE", fontsize=10, fontweight="bold")
-    ax_dist.set_ylabel("DENSITY", fontsize=10, fontweight="bold")
-
-    ax_dist.legend(
-        loc="upper left", bbox_to_anchor=(1.02, 1),
-        frameon=True, framealpha=1.0, edgecolor="#D1D5DB", fontsize=9
-    )
-
-    sns.despine(ax=ax_ts, offset=10, trim=True)
-    sns.despine(ax=ax_dist, offset=10, trim=True)
-
-    # ------------------------------------------------------------
-    # 7-3D. FOOTER PANEL
-    # ------------------------------------------------------------
-    footer_text = f"ZA STAT: {za_f}   |   P-VALUE: {p_val_disp}   |   STATUS: {status}"
-    ax_footer.text(
-        0.5, 0.5, footer_text,
-        transform=ax_footer.transAxes,
-        ha="center", va="center",
-        fontsize=11, fontweight="900", color="white",
-        bbox=dict(facecolor="#111827", edgecolor="none", boxstyle="round,pad=1.5")
-    )
-
-    plt.subplots_adjust(top=0.92, bottom=0.08, right=0.82)
-
-    if image_name and image_path:
-        fig.savefig(os.path.join(image_path, image_name), dpi=300, bbox_inches='tight')
+    # ------------------------------------------------------
+    # 7-9: Optional saving of the figure with 
+    #      performance-conscious settings
+    # ------------------------------------------------------
+    if image_path and image_name:
+        os.makedirs(image_path, exist_ok=True)
+        export_target = os.path.join(image_path, f"{image_name}.png")
+        plt.savefig(export_target, dpi=300, bbox_inches='tight')
+        if verbose:
+            print(f"✔ Chart saved successfully to target: {export_target}")
 
     plt.show()
+
+    return {
+        'fig': fig,
+        'ax_time_series': ax1,
+        'ax_density': ax2
+    }
 
 
 # ---------------------------------------------------------------------------
