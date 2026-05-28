@@ -3,7 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict
-import os
 from sklearn.decomposition import PCA
 
 # Define valid methods for sign normalization
