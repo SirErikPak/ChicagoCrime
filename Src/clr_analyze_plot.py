@@ -3,9 +3,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-import matplotlib as mpl
 from scatterd import scatterd
 import matplotlib.patches as mpatches
+import matplotlib.dates as mdates
 from matplotlib.ticker import FuncFormatter
 from typing import Mapping, Dict, Any, Tuple, Optional
 import seaborn as sns
@@ -2294,3 +2294,422 @@ def check_clr_distributions(
     )
 
     return diag
+
+
+# ---------------------------------------------------------------------------
+# 11: Plotting PC1 coordinate trajectory with algorithmic breakpoints and era shading
+# ---------------------------------------------------------------------------
+def plot_pc1_regime_segmentation(
+    dates,
+    pc1_values,
+    covid_start,
+    covid_end,
+    breaks_A,
+    breaks_C,
+    title="REGIME SEGMENTATION ANALYSIS: PC1 COORDINATE TRAJECTORY",
+    figsize=(16, 5.5)
+):
+    """
+    Plot a PC1 coordinate trajectory with macro-era shading and dynamic-programming
+    structural break annotations.
+
+    Parameters
+    ----------
+    dates : array-like of datetime64
+        Time index corresponding to the PCA coordinates.
+    
+    pc1_values : array-like of float
+        PC1 coordinate trajectory (e.g., results['coordinates_normalized'][:, 0]).
+    
+    covid_start : datetime-like
+        Start date of the assumed COVID baseline shading.
+    
+    covid_end : datetime-like
+        End date of the assumed COVID baseline shading.
+    
+    breaks_A : list of datetime-like
+        Structural break dates for Specification A (primary model).
+    
+    breaks_C : list of datetime-like
+        Structural break dates for Specification C (sensitivity model).
+    
+    title : str, optional
+        Main plot title. Defaults to a descriptive regime segmentation heading.
+    
+    figsize : tuple, optional
+        Figure size. Defaults to (16, 5.5).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The generated figure object.
+    
+    ax : matplotlib.axes.Axes
+        The axis containing the plotted elements.
+    """
+
+    # ----------------------------------------------------------
+    # Create figure and axis with a wide layout for annotations
+    # ----------------------------------------------------------
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # ----------------------------------------------------------
+    # Plot the PC1 trajectory line
+    # ----------------------------------------------------------
+    ax.plot(
+        dates,
+        pc1_values,
+        lw=1.75,
+        color='#2c3e50',
+        alpha=0.85,
+        label='PC1 Coordinate'
+    )
+
+    # ----------------------------------------------------------
+    # COVID baseline shading (macro-era assumption)
+    # ----------------------------------------------------------
+    ax.axvspan(
+        covid_start,
+        covid_end,
+        color='#e1e8ed',
+        alpha=0.4,
+        label='Assumed COVID Baseline'
+    )
+
+    # Add subtle vertical boundary markers at COVID start/end
+    for d in [covid_start, covid_end]:
+        ax.axvline(d, color='#7f8c8d', ls=':', lw=1.2, alpha=0.7)
+
+    # ----------------------------------------------------------
+    # Structural Breaks: Specification A (primary model)
+    # ----------------------------------------------------------
+    for d in breaks_A:
+        ax.axvline(d, color='#e74c3c', ls='-', lw=1.5, alpha=0.9)
+
+        # Annotate break with rotated label
+        ax.text(
+            d + pd.Timedelta(days=45),
+            ax.get_ylim()[1] * 0.82,
+            f'Dynp Spec A ({d.strftime("%Y-%m")})',
+            color='#e74c3c',
+            rotation=90,
+            verticalalignment='center',
+            fontsize=9,
+            fontweight='bold',
+            bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1)
+        )
+
+    # ----------------------------------------------------------
+    # Structural Breaks: Specification C (sensitivity model)
+    # ----------------------------------------------------------
+    for d in breaks_C:
+        ax.axvline(d, color='#f39c12', ls='--', lw=1.5, alpha=0.9)
+
+        # Annotate break with rotated label
+        ax.text(
+            d + pd.Timedelta(days=45),
+            ax.get_ylim()[1] * 0.64,
+            f'Dynp Spec C ({d.strftime("%Y-%m")})',
+            color='#f39c12',
+            rotation=90,
+            verticalalignment='center',
+            fontsize=9,
+            fontweight='bold',
+            bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1)
+        )
+
+    # ----------------------------------------------------------
+    # Title and subtitle with extra padding
+    # ----------------------------------------------------------
+    ax.set_title(
+        title + "\nComparison of Algorithmic Kernel Shifts Against Assumed Macro-Milestones",
+        fontsize=12,
+        fontweight='bold',
+        pad=45,
+        loc='left',
+        color='#2c3e50'
+    )
+
+    # ----------------------------------------------------------
+    # Grid and background styling
+    # ----------------------------------------------------------
+    ax.grid(True, which='major', color='#f0f3f4', linestyle='-', linewidth=1)
+    ax.set_facecolor('#ffffff')
+    fig.patch.set_facecolor('#ffffff')
+
+    # ----------------------------------------------------------
+    # Format the x-axis for multi-year time series
+    # ----------------------------------------------------------
+    ax.xaxis.set_major_locator(mdates.YearLocator(2))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
+    ax.tick_params(axis='both', which='major', labelsize=10, colors='#34495e')
+
+    # ----------------------------------------------------------
+    # Clean up plot spines for a modern look
+    # ----------------------------------------------------------
+    for spine in ['top', 'right']:
+        ax.spines[spine].set_visible(False)
+    for spine in ['left', 'bottom']:
+        ax.spines[spine].set_color('#bdc3c7')
+
+    # ----------------------------------------------------------
+    # Legend placed outside the plot area
+    # ----------------------------------------------------------
+    ax.legend(
+        loc='upper left',
+        bbox_to_anchor=(1.02, 1.0),
+        frameon=True,
+        facecolor='#ffffff',
+        edgecolor='#e2e8f0',
+        fontsize=9
+    )
+
+    # ----------------------------------------------------------
+    # Metadata panel placed under the legend
+    # ----------------------------------------------------------
+    metadata_text = (
+        "PELT Exploratory Sweep:\n"
+        "• Model Type: RBF Kernel\n"
+        "• Constraint Penalty: BIC\n"
+        "• Status: [0 Breaks Detected]\n"
+        "  (Signals local mean adjustments\n"
+        "   do not cross global variance threshold)"
+    )
+
+    props = dict(boxstyle='round,pad=0.5', facecolor='#fafafa', edgecolor='#e2e8f0', alpha=0.9)
+
+    fig.text(
+        0.865,
+        0.58,
+        metadata_text,
+        fontsize=8.5,
+        verticalalignment='top',
+        horizontalalignment='left',
+        bbox=props,
+        color='#4a5568'
+    )
+
+    # ----------------------------------------------------------
+    # Adjust layout to make room for legend + metadata panel
+    # ----------------------------------------------------------
+    plt.subplots_adjust(right=0.85, top=0.82)
+    plt.show()
+
+    return {'fig': fig, 'axis': ax}
+
+
+# ---------------------------------------------------------------------------
+# 11: Plot function for regime segmentation plotting with flexible inputs
+# ---------------------------------------------------------------------------
+def plot_regime_segmentation(dates, pca_coords, breaks_A, breaks_C,
+                             pelt_break=None,
+                             target_idx_1=229, target_idx_2=263,
+                             pelt_status="[0 Breaks Detected]"):
+    """
+    Plot the PC1 coordinate trajectory with three layers of changepoint evidence:
+    Dynp Spec A breaks (red, primary 25-cat CLR), Dynp Spec C breaks
+    (orange dashed, 23-cat vice-excluded CLR), and an optional Pelt break
+    detected only under permissive (0.25x BIC) penalty (green dotted).
+    The assumed COVID era is shaded gray for reference.
+
+    Uses explicit Line2D and Patch handles so legend entries match the
+    visual elements exactly, independent of matplotlib's automatic
+    handle detection.
+
+    Parameters
+    ----------
+    dates : array-like of datetime
+        Monthly timestamps, length matches pca_coords.
+    pca_coords : array-like
+        PC1 score series.
+    breaks_A : list of str or Timestamp
+        Dynp breakpoints from the 25-category specification.
+    breaks_C : list of str or Timestamp
+        Dynp breakpoints from the 23-category (vice-excluded) specification.
+    pelt_break : str or Timestamp, optional
+        Single Pelt break detected at 0.25x BIC (e.g., '2015-07').
+        Omitted from the figure if None.
+    target_idx_1, target_idx_2 : int
+        Indices into `dates` that define the assumed COVID-era bounds.
+    pelt_status : str
+        Status text shown in the metadata panel.
+    """
+    # Defensive input handling
+    pca_coords = np.asarray(pca_coords).ravel()
+    if len(pca_coords) != len(dates):
+        raise ValueError(
+            f"Length mismatch: pca_coords has {len(pca_coords)}, "
+            f"dates has {len(dates)}"
+        )
+
+    # -------------------------------------------
+    # 11-1: Anchor label y-positions to the data
+    # -------------------------------------------
+    y_low, y_high = pca_coords.min(), pca_coords.max()
+    y_range = y_high - y_low
+    label_y_A = y_high - 0.18 * y_range
+    label_y_C = y_high - 0.36 * y_range
+    label_y_P = y_high - 0.54 * y_range
+
+    # -------------------------------------------
+    # 11-2: Create figure and axis with a wide 
+    #       layout for annotations
+    # -------------------------------------------
+    fig, ax = plt.subplots(figsize=(18, 5.5))
+
+    # -------------------------------------------
+    # 11-3: Assumed COVID-era band
+    # -------------------------------------------
+    ax.axvspan(dates[target_idx_1], dates[target_idx_2],
+               color='#e1e8ed', alpha=0.8)
+    # Add subtle vertical boundary markers at COVID start/end
+    for idx in [target_idx_1, target_idx_2]:
+        ax.axvline(dates[idx], color='#7f8c8d', ls=':', lw=1.2, alpha=0.7)
+
+    # --------------------------------------------
+    # 11-4: Primary series
+    # --------------------------------------------
+    ax.plot(dates, pca_coords, lw=1.75, color='#2c3e50', alpha=0.9)
+
+    # --------------------------------------------
+    # 11-5:Dynp Spec A breaks (primary, 25 categories)
+    # --------------------------------------------
+    for d in breaks_A:
+        ts = pd.Timestamp(d)
+        ax.axvline(ts, color='#e74c3c', ls='-', lw=1.75, alpha=0.9)
+        ax.text(ts + pd.Timedelta(days=45), label_y_A,
+                f'Dynp Spec A ({ts.strftime("%Y-%m")})',
+                color='#e74c3c', rotation=90, verticalalignment='center',
+                fontsize=9, fontweight='bold',
+                bbox=dict(facecolor='white', alpha=0.8,
+                          edgecolor='none', pad=2))
+
+    # ---------------------------------------------
+    # 11-6: Dynp Spec C breaks (sensitivity, 23 categories)
+    # ---------------------------------------------
+    for d in breaks_C:
+        ts = pd.Timestamp(d)
+        ax.axvline(ts, color='#f39c12', ls='--', lw=1.5, alpha=0.9)
+        ax.text(ts + pd.Timedelta(days=45), label_y_C,
+                f'Dynp Spec C ({ts.strftime("%Y-%m")})',
+                color='#f39c12', rotation=90, verticalalignment='center',
+                fontsize=9, fontweight='bold',
+                bbox=dict(facecolor='white', alpha=0.8,
+                          edgecolor='none', pad=2))
+
+    # ---------------------------------------------
+    # 11-7: Pelt permissive-penalty break (only at 0.25x BIC)
+    # ---------------------------------------------
+    if pelt_break is not None:
+        ts = pd.Timestamp(pelt_break)
+        ax.axvline(ts, color='#27ae60', ls=':', lw=1.5, alpha=0.8)
+        ax.text(ts + pd.Timedelta(days=45), label_y_P,
+                f'Pelt @ 0.25×BIC ({ts.strftime("%Y-%m")})',
+                color='#27ae60', rotation=90, verticalalignment='center',
+                fontsize=9, fontweight='bold',
+                bbox=dict(facecolor='white', alpha=0.8,
+                          edgecolor='none', pad=2))
+
+    # ---------------------------------------------
+    # 11-8: Titles, grid, axes
+    # ---------------------------------------------
+    ax.set_title(
+        'REGIME SEGMENTATION ANALYSIS: PC1 COORDINATE TRAJECTORY\n'
+        'Comparison of Algorithmic Kernel Shifts Against Assumed Macro-Milestones',
+        fontsize=12, fontweight='bold', pad=20, loc='left', color='#2c3e50'
+    )
+    ax.grid(True, which='major', color='#f0f3f4', linestyle='-', linewidth=1)
+    ax.set_facecolor('#ffffff')
+    fig.patch.set_facecolor('#ffffff')
+
+    # ---------------------------------------------
+    # 11-9: Format the x-axis for multi-year time series
+    # ---------------------------------------------
+    ax.xaxis.set_major_locator(mdates.YearLocator(2))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
+    ax.tick_params(axis='both', which='major', labelsize=10, colors='#34495e')
+
+    # ---------------------------------------------
+    # 11-10: Clean up plot spines for a modern look
+    # ---------------------------------------------
+    for spine in ['top', 'right']:
+        ax.spines[spine].set_visible(False)
+    for spine in ['left', 'bottom']:
+        ax.spines[spine].set_color('#bdc3c7')
+
+    # ---------------------------------------------
+    # 11-11:Lock axes position before legend placement
+    # ---------------------------------------------
+    plt.subplots_adjust(left=0.06, right=0.78, top=0.88, bottom=0.10)
+
+    # ---------------------------------------------
+    # 11-12: Legend with explicit proxy handles
+    # ---------------------------------------------
+    line_pc1 = plt.Line2D([0], [0], color='#2c3e50', lw=1.75, alpha=0.9,
+                          label='PC1 Coordinate')
+    covid_patch = mpatches.Patch(facecolor='#ced6dc', edgecolor='none',
+                                 label='Assumed COVID Era')
+    mock_spec_A = plt.Line2D([0], [0], color='#e74c3c', ls='-', lw=1.75,
+                             label='Dynp Spec A (25 cats)')
+    mock_spec_C = plt.Line2D([0], [0], color='#f39c12', ls='--', lw=1.5,
+                             label='Dynp Spec C (23 cats)')
+    handles = [line_pc1, covid_patch, mock_spec_A, mock_spec_C]
+    if pelt_break is not None:
+        mock_pelt = plt.Line2D([0], [0], color='#27ae60', ls=':', lw=1.5,
+                               label='Pelt @ 0.25×BIC')
+        handles.append(mock_pelt)
+
+    # ---------------------------------------------
+    # 11-12: Create the legend outside the plot area
+    # ---------------------------------------------
+    leg = ax.legend(
+        handles=handles,
+        labels=[h.get_label() for h in handles],
+        loc='upper left',
+        bbox_to_anchor=(1.02, 1.0),
+        frameon=True, facecolor='#ffffff',
+        edgecolor='#e2e8f0', fontsize=9.5,
+        borderpad=0.8, labelspacing=0.7,
+    )
+
+    # ---------------------------------------------
+    # 11-12: Metadata panel placed under the legend 
+    #        in axes coordinates
+    # ---------------------------------------------
+    pelt_metadata_text = (
+        f"PELT Exploratory Sweep:\n"
+        f"• Model Type: RBF Kernel\n"
+        f"• Constraint Penalty: BIC\n"
+        f"• Status: {pelt_status}\n"
+        f"  (Cost reductions at candidate\n"
+        f"   breakpoints do not justify\n"
+        f"   the BIC penalty)"
+    )
+    props = dict(boxstyle='round,pad=0.6', facecolor='#fafafa',
+                 edgecolor='#e2e8f0', alpha=0.95)
+
+    # ---------------------------------------------
+    # 11-12: Force a draw to ensure the legend's 
+    #        bounding box is updated before we position 
+    #        the metadata panel
+    # ---------------------------------------------
+    fig.canvas.draw()
+    leg_bbox = leg.get_window_extent().transformed(ax.transAxes.inverted())
+
+    # ----------------------------------------------
+    # 11-13: Position the metadata panel just below the legend
+    #        using the legend's bounding box for reference
+    # ----------------------------------------------
+    ax.text(
+        leg_bbox.x0,
+        leg_bbox.y0 - 0.03,
+        pelt_metadata_text,
+        transform=ax.transAxes,
+        fontsize=8.5,
+        verticalalignment='top',
+        horizontalalignment='left',
+        bbox=props,
+        color='#4a5568',
+    )
+
+    return {'figure': fig, 'axis': ax}
