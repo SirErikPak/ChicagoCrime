@@ -48,13 +48,13 @@ Crimes that generally require face-to-face interaction or people being out in pu
 
 Fraud stands out as an outlier: it spiked significantly during COVID, with the exact Pre → Post figure visible in the chart. The surge aligns with pandemic-era scams and the rapid shift to digital transactions, though causation cannot be confirmed from this data alone.
 
-### Composition of crime
+### Composition of Crime
 
-The shift in the nature of crime is best seen in the crime proportion columns. While Larceny–Theft remains the most common crime (roughly 21–23% of all records), other categories shifted the makeup of the city's crime profile. These two durable level shifts — the collapse of opportunity-driven crimes and the acceleration of violence-adjacent offenses — together represent a substantial reshaping of Chicago's reported crime profile, not merely a change in volume. Whether these shifts amount to a structural regime break is examined separately in ChicagoCrimeStructuralAnalysis, which uses compositional methods to test the discrete-shift hypothesis directly.
+The shift in the nature of crime is best seen in the crime proportion columns. While Larceny–Theft remains the most common crime (roughly 21–23% of all records), other categories shifted the makeup of the city's crime profile. These two durable level shifts, the collapse of opportunity-driven crimes and the acceleration of violence-adjacent offenses, together represent a substantial reshaping of Chicago's reported crime profile, not merely a change in volume. Whether these shifts amount to a structural regime break is examined separately in ChicagoCrimeStructuralAnalysis, which uses compositional methods to test the discrete-shift hypothesis directly.
 
 ## Understanding Z-Scores and Crime Anomalies
 
-Z-score analysis highlights specialized anomalies — places where a specific crime type is occurring at a rate far beyond what is statistically normal for the rest of the city.
+Z-score analysis highlights specialized anomalies, places where a specific crime type is occurring at a rate far beyond what is statistically normal for the rest of the city.
 
 * **Z-score of 3.0**: The value is higher than about 99.87% of all values in a normal distribution (extreme outlier)
 * **Z-score of 2.0**: The value is higher than about 97.7% of all values (significantly higher than historical average)
