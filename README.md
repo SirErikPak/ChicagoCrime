@@ -44,7 +44,7 @@ Crimes that generally require face-to-face interaction or people being out in pu
 * **Prostitution & Gambling:** Near-total collapses down 93.5% and 97.8% respectively, likely due to the closure of physical venues and shifts in police priorities.
 * **Burglary:** Dropped −63.4% Pre → COVID. One plausible explanation is the shift to remote work, which makes residential targets riskier; this is a hypothesis, not a finding directly tested by the data.
 
-### Fraud — the outlier
+### Fraud - the outlier
 
 Fraud stands out as an outlier: it spiked significantly during COVID, with the exact Pre → Post figure visible in the chart. The surge aligns with pandemic-era scams and the rapid shift to digital transactions, though causation cannot be confirmed from this data alone.
 
