@@ -5,25 +5,24 @@ The data from the [Chicago Data Portal](https://data.cityofchicago.org/browse?ca
 We designate the primary Crime dataset as the authoritative source of truth. To ensure consistency and address missing values, we perform internal imputation using data from other sources to fill corresponding NaN entries in location-based fields.
 
 * [Data Wrangling Notebook](Notebook/ChicagoCrimeWrangle.ipynb)
-* [Data Visualize Notebook](Notebook/ChicagoCrimeVisualize.ipynb)
-* [Data Crime ERA Analysis Notebook](Notebook/ChicagoCrimeEraAnalysis.ipynb)
-<!-- * [Structural Analysis of Crime (Pre --> Covid --> Post)](Notebook/ChicagoCrimeAnalysisEra.ipynb) -->
+* [Data Visualization Notebook](Notebook/ChicagoCrimeVisualize.ipynb)
+* [Crime ERA Analysis Notebook](Notebook/ChicagoCrimeEraAnalysis.ipynb)
 * [Cluster Analysis Notebook](Notebook/ChicagoCrimeExploratoryClusterAnalysis.ipynb)
-* [Strutural Analysis](Notebook/ChicagoCrimeStructuralAnalysis.ipynb)
+* [Composition Analysis](https://github.com/SirErikPak/ChicagoCrimeCompositionAnalysis/blob/main/notebook/ChicagoCrimeStructuralAnalysis.ipynb)
 
 ## Chicago Crime Plot (2001 - 2025)
 
 ![Percentage Crime Plot](Image/scatter_crime_plot.png)
 
-## Understanding Percentage of Crime (Pre COVID & COVID & Post COVID)
+## Understanding Percentage of Crime (Pre‑COVID, COVID, and Post‑COVID)
 
 ![Crime Plot](Image/bar_analysis.png)
 
-![Panemic Impact Bar](Image/impact_of_covid.png)
+![Pandemic Impact Bar](Image/impact_of_covid.png)
 
-![Panemic Impact Box - Indexed](Image/box_indexed_crime_plot.png)
+![Pandemic Impact Box - Indexed](Image/box_indexed_crime_plot.png)
 
-![Panemic Impact Box - Non-Indexed](Image/box_nonindexed_crime_plot.png)
+![Pandemic Impact Box - Non-Indexed](Image/box_nonindexed_crime_plot.png)
 
 ## Summary
 
@@ -43,19 +42,22 @@ Crimes that generally require face-to-face interaction or people being out in pu
 
 * **Drug Abuse Violations:** Dropped −83.6% from Pre-COVID to Post-COVID. This is consistent with reduced street-level enforcement during lockdowns, shifts in policing priorities, and decriminalization trends, though it should not be read as a drop in actual drug use.
 * **Prostitution & Gambling:** Near-total collapses down 93.5% and 97.8% respectively, likely due to the closure of physical venues and shifts in police priorities.
-* **Burglary:** Dropped −63.4% Pre -> COVID. One plausible explanation is the shift to remote work, which makes residential targets riskier, though this is a hypothesis, not a finding directly tested by the data.
+* **Burglary:** Dropped −63.4% Pre → COVID. One plausible explanation is the shift to remote work, which makes residential targets riskier; this is a hypothesis, not a finding directly tested by the data.
 
-### Fraud the outlier
+### Fraud — the outlier
 
-Fraud stands out as an outlier: it spiked significantly during COVID, with the exact Pre -> Post figure visible in the chart. The COVID-era surge is consistent with pandemic-era scams and the rapid shift to digital transactions, though direct causation cannot be confirmed from this data alone.
+Fraud stands out as an outlier: it spiked significantly during COVID, with the exact Pre → Post figure visible in the chart. The surge aligns with pandemic-era scams and the rapid shift to digital transactions, though causation cannot be confirmed from this data alone.
 
 ### Composition of crime
 
-The shift in the nature of crime is best seen in the crime proportion columns. While Larceny–Theft remains the most common crime (roughly 21–23% of all records), other categories shifted the makeup of the city's crime profile. The two structural movements, collapse of opportunity-driven crimes and acceleration of violence-adjacent offenses, together represent a fundamental recomposition of Chicago's crime landscape, not merely a change in volume.
+The shift in the nature of crime is best seen in the crime proportion columns. While Larceny–Theft remains the most common crime (roughly 21–23% of all records), other categories shifted the makeup of the city's crime profile. These two durable level shifts — the collapse of opportunity-driven crimes and the acceleration of violence-adjacent offenses — together represent a substantial reshaping of Chicago's reported crime profile, not merely a change in volume. Whether these shifts amount to a structural regime break is examined separately in ChicagoCrimeStructuralAnalysis, which uses compositional methods to test the discrete-shift hypothesis directly.
+
 
 ## Understanding Z-Scores and Crime Anomalies
 
-Z-score analysis highlights specialized anomalies, places where a specific crime type is occurring at a rate far beyond what is statistically normal for the rest of the city.
+![Z-Score Heatmap](Image/z-score_heatmap.png)
+
+Z-score analysis highlights specialized anomalies — places where a specific crime type is occurring at a rate far beyond what is statistically normal for the rest of the city.
 
 * **Z-score of 3.0**: The value is higher than about 99.87% of all values in a normal distribution (extreme outlier)
 * **Z-score of 2.0**: The value is higher than about 97.7% of all values (significantly higher than historical average)
@@ -100,6 +102,19 @@ By rotating the plot, you can now scan horizontally to see which crimes behave s
 
 ## Cluster Indexed Crime Analysis [Notebook](Notebook/ChicagoCrimeExploratoryClusterAnalysis.ipynb)
 
+## Was COVID a Structural Break?
+
+While individual crime categories shifted measurably across the pandemic boundary, a separate compositional analysis ([Structural Analysis notebook](https://github.com/SirErikPak/ChicagoCrimeCompositionAnalysis/blob/main/notebook/ChicagoCrimeStructuralAnalysis.ipynb)) tests whether the *multivariate compositional structure* — how categories co-move with each other — also broke at COVID.
+
+The answer is no. Four independent methods agree:
+
+- **Multivariate changepoint detection (Pelt with BIC penalty)** returns zero breaks across penalty multipliers 0.5× to 4× and minimum-segment-lengths 12–36 months.
+- **Confirmatory changepoint detection (Dynp at n=2)** places breaks at 2013-11 and 2019-09 — pre-pandemic dates, not aligned with COVID boundaries.
+- **Univariate stationarity testing (Zivot-Andrews)** identifies only 3 of 24 categories with statistically significant single structural breaks; Liquor Laws breaks in 2015 - five years before COVID.
+- **Per-era dependence-structure comparison (Frobenius distance)** finds the post-COVID structure is *further* from pre-COVID than COVID itself was, indicating continued evolution rather than reversion to a pre-pandemic equilibrium.
+
+The two analyses are complementary: individual category levels shifted significantly (see the EraAnalysis notebook), but the underlying compositional structure evolved gradually rather than breaking discretely at the pandemic. *What crimes are reported* shifted measurably, while *how crime categories relate to one another* did not undergo a discrete break.
+
 ### Summary (Indexed Crimes)
 
 #### Correlation Distance + Complete Linkage on Z‑Scored Crime Time Series
@@ -116,7 +131,7 @@ The resulting clusters do **not** reflect crime volume or severity. Instead, the
 
 ##### Cluster 1: Lethal Violence
 
-* Homicide – 1st or 2nd Degree
+* Homicide - 1st or 2nd Degree
 * Involuntary Manslaughter / Reckless Homicide
   * These offenses show tightly aligned anomaly patterns. When one deviates from its norm, the other typically does as well. This suggests shared situational or behavioral dynamics influencing lethal outcomes.
 
