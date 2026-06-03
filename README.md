@@ -10,9 +10,9 @@ We designate the primary Crime dataset as the authoritative source of truth. To 
 * [Cluster Analysis Notebook](Notebook/ChicagoCrimeExploratoryClusterAnalysis.ipynb)
 * [Chicago Crime Composition Analysis](https://github.com/SirErikPak/ChicagoCrimeCompositionAnalysis)
 
-## Chicago Crime Plot (2001 - 2025)
-
 ![Percentage Crime Plot](Image/scatter_crime_plot.png)
+
+## Chicago Crime Plot (2001 - 2025)
 
 ## Understanding Percentage of Crime (Pre‑COVID, COVID, and Post‑COVID)
 
