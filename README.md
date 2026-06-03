@@ -52,10 +52,7 @@ Fraud stands out as an outlier: it spiked significantly during COVID, with the e
 
 The shift in the nature of crime is best seen in the crime proportion columns. While Larceny–Theft remains the most common crime (roughly 21–23% of all records), other categories shifted the makeup of the city's crime profile. These two durable level shifts — the collapse of opportunity-driven crimes and the acceleration of violence-adjacent offenses — together represent a substantial reshaping of Chicago's reported crime profile, not merely a change in volume. Whether these shifts amount to a structural regime break is examined separately in ChicagoCrimeStructuralAnalysis, which uses compositional methods to test the discrete-shift hypothesis directly.
 
-
 ## Understanding Z-Scores and Crime Anomalies
-
-![Z-Score Heatmap](Image/z-score_heatmap.png)
 
 Z-score analysis highlights specialized anomalies — places where a specific crime type is occurring at a rate far beyond what is statistically normal for the rest of the city.
 
@@ -102,18 +99,18 @@ By rotating the plot, you can now scan horizontally to see which crimes behave s
 
 ## Cluster Indexed Crime Analysis [Notebook](Notebook/ChicagoCrimeExploratoryClusterAnalysis.ipynb)
 
+The two analyses are complementary: individual category levels shifted significantly (see the EraAnalysis notebook), but the underlying compositional structure evolved gradually rather than breaking discretely at the pandemic. *What crimes are reported* shifted measurably, while *how crime categories relate to one another* did not undergo a discrete break.
+
 ## Was COVID a Structural Break?
 
 While individual crime categories shifted measurably across the pandemic boundary, a separate compositional analysis ([Structural Analysis notebook](https://github.com/SirErikPak/ChicagoCrimeCompositionAnalysis/blob/main/notebook/ChicagoCrimeStructuralAnalysis.ipynb)) tests whether the *multivariate compositional structure* — how categories co-move with each other — also broke at COVID.
 
 The answer is no. Four independent methods agree:
 
-- **Multivariate changepoint detection (Pelt with BIC penalty)** returns zero breaks across penalty multipliers 0.5× to 4× and minimum-segment-lengths 12–36 months.
-- **Confirmatory changepoint detection (Dynp at n=2)** places breaks at 2013-11 and 2019-09 — pre-pandemic dates, not aligned with COVID boundaries.
-- **Univariate stationarity testing (Zivot-Andrews)** identifies only 3 of 24 categories with statistically significant single structural breaks; Liquor Laws breaks in 2015 - five years before COVID.
-- **Per-era dependence-structure comparison (Frobenius distance)** finds the post-COVID structure is *further* from pre-COVID than COVID itself was, indicating continued evolution rather than reversion to a pre-pandemic equilibrium.
-
-The two analyses are complementary: individual category levels shifted significantly (see the EraAnalysis notebook), but the underlying compositional structure evolved gradually rather than breaking discretely at the pandemic. *What crimes are reported* shifted measurably, while *how crime categories relate to one another* did not undergo a discrete break.
+* **Multivariate changepoint detection (Pelt with BIC penalty)** returns zero breaks across penalty multipliers 0.5× to 4× and minimum-segment-lengths 12–36 months.
+* **Confirmatory changepoint detection (Dynp at n=2)** places breaks at 2013-11 and 2019-09 — pre-pandemic dates, not aligned with COVID boundaries.
+*-* **Univariate stationarity testing (Zivot-Andrews)** identifies only 3 of 24 categories with statistically significant single structural breaks; Liquor Laws breaks in 2015 - five years before COVID.
+* **Per-era dependence-structure comparison (Frobenius distance)** finds the post-COVID structure is *further* from pre-COVID than COVID itself was, indicating continued evolution rather than reversion to a pre-pandemic equilibrium.
 
 ### Summary (Indexed Crimes)
 
@@ -157,12 +154,17 @@ The resulting clusters do **not** reflect crime volume or severity. Instead, the
 
 #### Insights & Observations
 
-* Inverse Relationships: Cluster 1 and Cluster 3 often move in opposite directions. For example, in 2020, Cluster 1 reached a high of 1.62, while Cluster 3 reached a low of -0.91.
-* This group stayed below average for nearly 15 years, hitting its lowest point around 2013. However, it saw a surge starting in 2016, peaking in 2020. Interestingly, it shows a very sharp downward trend toward 2025.
-* Cluster 2 started very strongly in the early 2000s but crashed hard between 2012 and 2015. It had a brief surge in the late 2010s but is currently drifting back into negative territory.
-* Cluster 3 maintained high positive values for the first decade (2001–2011). Since 2014, it has been in long-term decline and has remained the lowest-performing group for several years.
-* The 2024-2025 Pivot: All three clusters are currently showing a downward trend as of 2025. Cluster 1, which was dominant during the pandemic years, has crashed back down to -0.105.
-* Volatility: Cluster 1 shows the most dramatic "swing," moving from deep negatives in the early 2010s to sharp positives in the early 2020s.
+* **Cluster 1 (Lethal Violence)** stayed below average for nearly 15 years, hitting its lowest point around 2013. It surged starting in 2016, peaking in 2020, and shows a sharp downward trend toward 2025.
+
+* **Cluster 2 (Interpersonal Violence + MVT)** started very strongly in the early 2000s but crashed hard between 2012 and 2015. It had a brief surge in the late 2010s but is currently drifting back into negative territory.
+
+* **Cluster 3 (Property Crime + Related)** maintained high positive values for the first decade (2001–2011). Since 2014, it has been in long-term decline and has remained the lowest-performing group for several years.
+
+* **Inverse Relationships:** Cluster 1 and Cluster 3 often move in opposite directions. In 2020, Cluster 1 reached a high of 1.62 while Cluster 3 reached a low of -0.91.
+
+* **2024-2025 Pivot:** All three clusters are showing a downward trend as of 2025. Cluster 1, which was dominant during the pandemic years, has crashed back down to -0.105.
+
+* **Volatility:** Cluster 1 shows the most dramatic swing, moving from deep negatives in the early 2010s to sharp positives in the early 2020s — a full arc no other cluster matches.
 
 ##### Conclusion
 
