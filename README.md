@@ -103,7 +103,7 @@ The two analyses are complementary: individual category levels shifted significa
 
 ## Was COVID a Structural Break?
 
-While individual crime categories shifted measurably across the pandemic boundary, a separate compositional analysis ([Structural Analysis notebook](https://github.com/SirErikPak/ChicagoCrimeCompositionAnalysis/blob/main/notebook/ChicagoCrimeStructuralAnalysis.ipynb)) tests whether the *multivariate compositional structure* — how categories co-move with each other — also broke at COVID.
+While many individual crime categories demonstrated significant changes across the pandemic boundary, an additional compositional analysis ([Structural Analysis notebook](https://github.com/SirErikPak/ChicagoCrimeCompositionAnalysis/blob/main/notebook/ChicagoCrimeStructuralAnalysis.ipynb)) examined whether the overall crime composition and its underlying co-movement structure underwent a systemic reorganization during the COVID period.
 
 The answer is no. Four independent methods agree:
 
