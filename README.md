@@ -108,7 +108,7 @@ While many individual crime categories demonstrated significant changes across t
 The answer is no. Four independent methods agree:
 
 * **Multivariate changepoint detection (Pelt with BIC penalty)** returns zero breaks across penalty multipliers 0.5× to 4× and minimum-segment-lengths 12–36 months.
-* **Confirmatory changepoint detection (Dynp at n=2)** places breaks at 2013-11 and 2019-09 and pre-pandemic dates, not aligned with COVID boundaries.
+* **Confirmatory changepoint detection (Dynp at n=2)** places breaks at 2013-11 and 2019-09, while pre-pandemic dates are not aligned with COVID boundaries.
 * **Univariate stationarity testing (Zivot-Andrews)** identifies only 3 of 24 categories with statistically significant single structural breaks; Liquor Laws breaks in 2015, five years before COVID.
 * **Per-era dependence-structure comparison (Frobenius distance)** finds the post-COVID structure is *further* from pre-COVID than COVID itself was, indicating continued evolution rather than reversion to a pre-pandemic equilibrium.
 
